@@ -101,7 +101,7 @@
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas, { passive: true });
 
-  const COLORS  = ['#c9a84c', '#f0c040', '#9a7a30', '#4a1070', '#7a3aaa', '#ffffff', '#e8c870', '#d4a040'];
+  const COLORS  = ['#c41e2b', '#e02535', '#8a1018', '#1a6628', '#2a8638', '#ffffff', '#cc3344', '#aa2222'];
   const SHAPES  = ['circle', 'rect', 'diamond'];
   const COUNT   = 90;
 
@@ -226,6 +226,57 @@
       field.addEventListener('input', () => {
         field.style.borderColor = '';
       });
+    });
+  }
+
+  /* --- Lightbox --- */
+  const lightbox = document.getElementById('lightbox');
+  const lbImg    = document.getElementById('lbImg');
+  const lbClose  = document.getElementById('lbClose');
+  const lbPrev   = document.getElementById('lbPrev');
+  const lbNext   = document.getElementById('lbNext');
+
+  if (lightbox) {
+    let galleryImgs = [];
+    let lbIndex = 0;
+
+    function openLightbox(index) {
+      lbIndex = index;
+      lbImg.src = galleryImgs[lbIndex];
+      lightbox.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox() {
+      lightbox.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    document.querySelectorAll('.gallery-item').forEach((item, i) => {
+      const img = item.querySelector('.gallery-real-img');
+      if (img) galleryImgs.push(img.src);
+
+      item.addEventListener('click', () => {
+        if (img) openLightbox(i);
+      });
+    });
+
+    lbClose?.addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
+    lbPrev?.addEventListener('click', e => {
+      e.stopPropagation();
+      lbIndex = (lbIndex - 1 + galleryImgs.length) % galleryImgs.length;
+      lbImg.src = galleryImgs[lbIndex];
+    });
+    lbNext?.addEventListener('click', e => {
+      e.stopPropagation();
+      lbIndex = (lbIndex + 1) % galleryImgs.length;
+      lbImg.src = galleryImgs[lbIndex];
+    });
+    document.addEventListener('keydown', e => {
+      if (!lightbox.classList.contains('open')) return;
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft')  { lbIndex = (lbIndex - 1 + galleryImgs.length) % galleryImgs.length; lbImg.src = galleryImgs[lbIndex]; }
+      if (e.key === 'ArrowRight') { lbIndex = (lbIndex + 1) % galleryImgs.length; lbImg.src = galleryImgs[lbIndex]; }
     });
   }
 

@@ -1,0 +1,52 @@
+[
+  {
+    "id": 1,
+    "date": "2026-11-11",
+    "title": "Narrenruf 11:11 Uhr – Saisoneröffnung",
+    "description": "Die fünfte Jahreszeit beginnt! Mit dem traditionellen Narrenruf um Punkt 11 Uhr 11 startet die neue Faschingssaison offiziell. Der Startschuss für Monate voller Spaß, Tanz und närrischen Treibens.",
+    "type": "highlight",
+    "location": "Kirchdorf an der Krems",
+    "time": "11:11 Uhr",
+    "featured": true
+  },
+  {
+    "id": 2,
+    "date": "2027-01-15",
+    "title": "Großer Faschingsball",
+    "description": "Der elegante Höhepunkt der Ballsaison. Tanz, Live-Musik, Prinzenpaar-Proklamation und unvergessliche Stimmung.",
+    "type": "ball",
+    "location": "Micheldorf",
+    "time": "20:00 Uhr",
+    "featured": false
+  },
+  {
+    "id": 3,
+    "date": "2027-02-06",
+    "title": "Kinderfasching",
+    "description": "Die kleinen Narren übernehmen das Kommando! Buntes Programm, Spiele, Kostüme und jede Menge Spaß für die ganze Familie.",
+    "type": "familie",
+    "location": "Kirchdorf an der Krems",
+    "time": "14:00 Uhr",
+    "featured": false
+  },
+  {
+    "id": 4,
+    "date": "2027-02-20",
+    "title": "Großer Faschingsumzug",
+    "description": "Der Straßenfasching – alle Gruppen, Festwägen, Musik und Konfetti! Das absolute Highlight der Saison.",
+    "type": "highlight",
+    "location": "Kirchdorf an der Krems",
+    "time": "13:00 Uhr",
+    "featured": false
+  },
+  {
+    "id": 5,
+    "date": "2027-03-02",
+    "title": "Faschingsdienstag – Großes Finale",
+    "description": "Der letzte große Faschingstag vor dem Aschermittwoch. Ein letztes Mal zieht der Fasching durch die Straßen – bis zum nächsten Jahr!",
+    "type": "abschluss",
+    "location": "Kirchdorf an der Krems",
+    "time": "10:00 Uhr",
+    "featured": false
+  }
+]

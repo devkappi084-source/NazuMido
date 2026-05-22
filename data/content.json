@@ -1,0 +1,29 @@
+{
+  "hero": {
+    "pretext": "Willkommen bei der",
+    "title": "NazuMido",
+    "subtitle": "Narrenzunft der schwarzen Grafen",
+    "location": "Kirchdorf an der Krems · Oberösterreich",
+    "motto": "\"Jetzt wird's närrisch!\""
+  },
+  "about": {
+    "eyebrow": "Tradition seit Jahrzehnten",
+    "lead": "Die <strong>Narrenzunft der schwarzen Grafen – NazuMido</strong> ist der Faschingsverein aus Kirchdorf an der Krems. Mit einer langen Tradition des närrischen Brauchtums bringen wir Jahr für Jahr Freude, Spaß und Unterhaltung in die Region Kirchdorf–Micheldorf.",
+    "text1": "Unsere Narrenzunft vereint Menschen aller Altersgruppen, die für Fasching, Gemeinschaft und das oberösterreichische Brauchtum brennen. Vom Elferrat über die tanzbegeisterten Gardemädels bis hin zum strahlenden Prinzenpaar – bei uns findet jeder seinen Platz.",
+    "text2": "Als <em>schwarze Grafen</em> pflegen wir mit Stolz unsere närrischen Traditionen und feiern gemeinsam die schönste fünfte Jahreszeit. Unser Verein ist mehr als ein Club – wir sind eine große Familie.",
+    "stat_years": "50+",
+    "stat_members": "100+",
+    "card1_title": "Tradition",
+    "card1_text": "Seit Jahrzehnten pflegen wir das närrische Brauchtum im Raum Kirchdorf–Micheldorf mit Leidenschaft und Zusammenhalt.",
+    "card2_title": "Gemeinschaft",
+    "card2_text": "Wir sind eine Familie – Menschen, die gemeinsam lachen, tanzen, feiern und füreinander da sind.",
+    "card3_title": "Spaß",
+    "card3_text": "Jedes Jahr aufs Neue sorgen wir für unvergessliche Momente – auf der Bühne, beim Umzug und beim Faschingsball."
+  },
+  "groups": {
+    "garde_desc": "Die Gardemädels sind die tanzende Seele des Vereins. Mit präzisen Choreografien, strahlenden Kostümen und viel Herzblut begeistern sie bei jedem Auftritt das Publikum.",
+    "elferrat_desc": "Der Elferrat bildet das närrische Gremium unserer Zunft. Die elf Räte sorgen für Ordnung im fröhlichen Chaos und führen charmant durch alle Veranstaltungen.",
+    "prinzen_desc": "Das Prinzenpaar steht an der Spitze der Narrenzunft. Für eine ganze Saison repräsentieren Prinz und Prinzessin den Verein bei regionalen und überregionalen Veranstaltungen.",
+    "hexen_desc": "Die Hexen sind eine lebendige Tradition – mit furchterregenden (aber herzlichen!) Masken und Kostümen sorgen sie beim Faschingsumzug und auf den Straßen für Furore."
+  }
+}
