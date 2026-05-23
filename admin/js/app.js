@@ -658,6 +658,7 @@ function renderSettings() {
       <button class="tab active" data-tab="contact">Kontakt</button>
       <button class="tab" data-tab="social">Social Media</button>
       <button class="tab" data-tab="general">Allgemein</button>
+      <button class="tab" data-tab="vps">VPS-Server</button>
     </div>
     <div class="tab-panel active" id="tab-contact"><div class="form-card"><div class="form-card-title">Kontaktdaten</div>
       <div class="form-group"><label>Vereinsname</label><input id="s-name" value="${esc(c.address_name)}"></div>
@@ -674,8 +675,37 @@ function renderSettings() {
     <div class="tab-panel" id="tab-general"><div class="form-card"><div class="form-card-title">Allgemein</div>
       <div class="form-grid-3"><div class="form-group"><label>Saison</label><input id="s-season" value="${esc(g.season)}"></div><div class="form-group"><label>Gegründet</label><input id="s-founded" value="${esc(g.founded)}"></div><div class="form-group"><label>Mitglieder</label><input id="s-members" value="${esc(g.members)}"></div></div>
       <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Live schalten</button></div>
-    </div></div>`;
+    </div></div>
+    <div class="tab-panel" id="tab-vps">
+      <div class="form-card">
+        <div class="form-card-title">Foto-Server (VPS)</div>
+        <p style="font-size:.83rem;color:var(--text-muted);margin-bottom:18px">
+          Die URL deines VPS-Foto-Servers. Wird in KV gespeichert und überschreibt die<br>
+          <code style="font-size:.78rem;background:var(--input-bg);padding:1px 5px;border-radius:3px">PHOTOS_VPS_URL</code>
+          Umgebungsvariable aus dem Cloudflare Dashboard.
+        </p>
+        <div class="form-group">
+          <label>VPS-Server URL</label>
+          <input id="vps-url" placeholder="https://photos.deine-domain.de" style="font-family:monospace">
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+          <button class="btn-save" style="width:auto;padding:10px 20px" onclick="saveVpsUrl(this)">Speichern</button>
+          <button class="btn-save" style="width:auto;padding:10px 20px;background:var(--input-bg);border:1px solid var(--card-border)" onclick="testVpsConnection(this)">Verbindung testen</button>
+          <span id="vps-status"></span>
+        </div>
+        <div class="form-card-title" style="margin-top:8px">Sicherheits-Secrets</div>
+        <p style="font-size:.83rem;color:var(--text-muted)">
+          <strong>API_KEY</strong> und <strong>HMAC_SECRET</strong> können nur als Cloudflare-Secrets gesetzt werden
+          (Dashboard → Settings → Environment Variables). Sie werden nie im Admin gespeichert.
+        </p>
+        <div class="form-grid-2" style="margin-top:12px">
+          <div class="perm-item"><span style="color:var(--text-muted);font-size:.8rem">VPS_API_KEY</span><span id="vps-apikey-status" style="font-size:.78rem"></span></div>
+          <div class="perm-item"><span style="color:var(--text-muted);font-size:.8rem">HMAC_SECRET</span><span id="vps-hmac-status" style="font-size:.78rem"></span></div>
+        </div>
+      </div>
+    </div>`;
   initTabs();
+  loadVpsTab();
 }
 
 async function saveSettings(btn) {
@@ -692,6 +722,54 @@ async function saveSettings(btn) {
     flash('Einstellungen gespeichert! Sofort live.');
   } catch(ex) { flash('Fehler: '+ex.message,'error'); }
   finally { S.saving=false; btn.textContent=o; btn.disabled=false; }
+}
+
+async function loadVpsTab() {
+  try {
+    const { vps } = await API.get('vps_config');
+    const input = document.getElementById('vps-url');
+    if (input) input.value = vps?.url || '';
+  } catch {}
+}
+
+async function saveVpsUrl(btn) {
+  const url = document.getElementById('vps-url')?.value?.trim();
+  if (!url) { flash('Bitte eine URL eingeben', 'error'); return; }
+  const o = btn.textContent; btn.textContent = 'Speichern…'; btn.disabled = true;
+  try {
+    await API.put('vps_config', { url });
+    flash('VPS-URL gespeichert!');
+    setVpsStatus('saved');
+  } catch(ex) { flash('Fehler: ' + ex.message, 'error'); }
+  finally { btn.textContent = o; btn.disabled = false; }
+}
+
+async function testVpsConnection(btn) {
+  const o = btn.textContent; btn.textContent = 'Teste…'; btn.disabled = true;
+  setVpsStatus('loading');
+  try {
+    const r = await API.get('vps_status');
+    if (r.ok) {
+      setVpsStatus('ok', `Erreichbar · ${r.data?.time ? new Date(r.data.time).toLocaleTimeString('de') : 'OK'}`);
+    } else {
+      setVpsStatus('error', r.error || `HTTP ${r.status}`);
+    }
+  } catch(ex) { setVpsStatus('error', ex.message); }
+  finally { btn.textContent = o; btn.disabled = false; }
+}
+
+function setVpsStatus(state, msg = '') {
+  const el = document.getElementById('vps-status');
+  if (!el) return;
+  const map = {
+    loading: ['color:var(--text-muted)', '⏳ Verbinde…'],
+    ok:      ['color:#6adf7a',            '✓ ' + (msg || 'OK')],
+    error:   ['color:#ff8888',            '✗ ' + (msg || 'Fehler')],
+    saved:   ['color:#6adf7a',            '✓ Gespeichert'],
+  };
+  const [style, text] = map[state] || ['', ''];
+  el.setAttribute('style', 'font-size:.83rem;' + style);
+  el.textContent = text;
 }
 
 // ══════════════════════════════════════════════════════════════

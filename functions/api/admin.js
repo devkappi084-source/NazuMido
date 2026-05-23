@@ -43,6 +43,9 @@ export async function onRequest(context) {
     case 'preview_photos': return setPreview(request, url, env, user);
     case 'sign_download':  return signDownload(url, env, user);
 
+    case 'vps_config': return handleVpsConfig(method, request, env, user);
+    case 'vps_status': return vpsStatus(env, user);
+
     default: return err('Unbekannte Aktion');
   }
 }
@@ -276,11 +279,12 @@ async function uploadPhoto(request, url, env, user) {
   if (!user.isOwner && !user.permissions?.gallery) return err('Keine Berechtigung', 403);
   const eventId = url.searchParams.get('event');
   if (!eventId) return err('Event-ID fehlt');
-  if (!env.PHOTOS_VPS_URL || !env.VPS_API_KEY) return err('VPS nicht konfiguriert', 503);
+  const vpsBase = await getVpsUrl(env);
+  if (!vpsBase || !env.VPS_API_KEY) return err('VPS nicht konfiguriert', 503);
 
   // Proxy the multipart upload to the VPS
   const form = await request.formData();
-  const vpsUrl = `${env.PHOTOS_VPS_URL}/events/${eventId}/upload`;
+  const vpsUrl = `${vpsBase}/events/${eventId}/upload`;
   const vpsRes = await fetch(vpsUrl, {
     method: 'POST',
     headers: { 'x-api-key': env.VPS_API_KEY },
@@ -309,9 +313,10 @@ async function deletePhoto(url, env, user) {
   const eventId  = url.searchParams.get('event');
   const filename = url.searchParams.get('file');
   if (!eventId || !filename) return err('Event-ID und Dateiname erforderlich');
-  if (!env.PHOTOS_VPS_URL || !env.VPS_API_KEY) return err('VPS nicht konfiguriert', 503);
+  const vpsBase = await getVpsUrl(env);
+  if (!vpsBase || !env.VPS_API_KEY) return err('VPS nicht konfiguriert', 503);
 
-  const vpsUrl = `${env.PHOTOS_VPS_URL}/events/${eventId}/${encodeURIComponent(filename)}`;
+  const vpsUrl = `${vpsBase}/events/${eventId}/${encodeURIComponent(filename)}`;
   await fetch(vpsUrl, { method: 'DELETE', headers: { 'x-api-key': env.VPS_API_KEY } });
 
   // Remove from KV metadata
@@ -347,15 +352,56 @@ async function signDownload(url, env, user) {
   const eventId  = url.searchParams.get('event');
   const filename = url.searchParams.get('file');
   if (!eventId || !filename) return err('Event-ID und Dateiname erforderlich');
-  if (!env.HMAC_SECRET || !env.PHOTOS_VPS_URL) return err('VPS nicht konfiguriert', 503);
+  if (!env.HMAC_SECRET) return err('HMAC_SECRET nicht konfiguriert', 503);
+  const vpsBase = await getVpsUrl(env);
+  if (!vpsBase) return err('VPS-URL nicht konfiguriert', 503);
 
   const expires = Date.now() + 15 * 60 * 1000; // 15 min
   const msg     = `${eventId}/${filename}:${expires}`;
   const sig     = await hmacSign(msg, env.HMAC_SECRET);
 
   return json({
-    url: `${env.PHOTOS_VPS_URL}/events/${eventId}/${encodeURIComponent(filename)}?expires=${expires}&sig=${sig}`
+    url: `${vpsBase}/events/${eventId}/${encodeURIComponent(filename)}?expires=${expires}&sig=${sig}`
   });
+}
+
+// ── VPS configuration ────────────────────────────────────────
+async function handleVpsConfig(method, request, env, user) {
+  if (!user.isOwner && !user.permissions?.settings) return err('Keine Berechtigung', 403);
+
+  if (method === 'GET') {
+    const cfg = await env.KV.get('config:vps', 'json').catch(() => null);
+    return json({ vps: { url: cfg?.url || env.PHOTOS_VPS_URL || '' } });
+  }
+
+  if (method === 'PUT') {
+    const { url } = await request.json().catch(() => ({}));
+    if (!url) return err('URL erforderlich');
+    await env.KV.put('config:vps', JSON.stringify({ url: url.replace(/\/$/, '') }));
+    return json({ ok: true });
+  }
+
+  return err('Methode nicht erlaubt', 405);
+}
+
+async function vpsStatus(env, user) {
+  if (!user.isOwner && !user.permissions?.settings) return err('Keine Berechtigung', 403);
+  const vpsUrl = await getVpsUrl(env);
+  if (!vpsUrl) return json({ ok: false, error: 'Keine VPS-URL konfiguriert' });
+
+  try {
+    const r    = await fetch(`${vpsUrl}/health`, { signal: AbortSignal.timeout(5000) });
+    const data = r.ok ? await r.json().catch(() => ({})) : {};
+    return json({ ok: r.ok, status: r.status, data });
+  } catch (e) {
+    return json({ ok: false, error: e.message });
+  }
+}
+
+// Resolves VPS base URL: KV overrides env var
+async function getVpsUrl(env) {
+  const cfg = await env.KV.get('config:vps', 'json').catch(() => null);
+  return cfg?.url || env.PHOTOS_VPS_URL || null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
