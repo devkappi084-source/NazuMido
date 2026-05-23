@@ -8,189 +8,161 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/admin.css">
   <style>
-    /* Modal */
     .modal-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.72);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 500; padding: 20px;
+      position:fixed;inset:0;background:rgba(0,0,0,.72);
+      display:flex;align-items:center;justify-content:center;z-index:500;padding:20px;
     }
     .modal-box {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      width: 100%; max-width: 600px;
-      max-height: 90vh; overflow-y: auto;
+      background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;
+      width:100%;max-width:600px;max-height:90vh;overflow-y:auto;
     }
     .modal-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 24px 16px;
-      border-bottom: 1px solid var(--card-border);
-      position: sticky; top: 0; background: var(--card-bg); z-index: 1;
+      display:flex;align-items:center;justify-content:space-between;
+      padding:20px 24px 16px;border-bottom:1px solid var(--card-border);
+      position:sticky;top:0;background:var(--card-bg);z-index:1;
     }
-    .modal-head h2 { font-size: 0.98rem; font-weight: 600; }
-    .modal-close {
-      background: none; border: none; color: var(--text-muted);
-      font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
-      transition: color .15s;
+    .modal-head h2{font-size:.98rem;font-weight:600;}
+    .modal-close{background:none;border:none;color:var(--text-muted);font-size:1.1rem;cursor:pointer;padding:4px 8px;}
+    .modal-form{padding:22px 24px;}
+    .modal-actions{
+      display:flex;justify-content:flex-end;gap:10px;
+      padding:16px 24px;border-top:1px solid var(--card-border);
+      position:sticky;bottom:0;background:var(--card-bg);
     }
-    .modal-close:hover { color: var(--text); }
-    .modal-form { padding: 22px 24px; }
-    .modal-actions {
-      display: flex; justify-content: flex-end; gap: 10px;
-      padding: 16px 24px; border-top: 1px solid var(--card-border);
-      position: sticky; bottom: 0; background: var(--card-bg);
+    .loading-overlay{
+      position:fixed;inset:0;background:rgba(14,14,20,.92);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:700;gap:16px;
     }
-
-    /* Loading overlay */
-    .loading-overlay {
-      position: fixed; inset: 0;
-      background: rgba(14,14,20,0.92);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      z-index: 700; gap: 16px;
+    .loading-spinner{width:38px;height:38px;border:3px solid var(--card-border);border-top-color:var(--red);border-radius:50%;animation:spin .75s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-text{font-size:.85rem;color:var(--text-muted);}
+    #flash-area{position:sticky;top:var(--header-h);z-index:150;}
+    .header-preview{
+      display:inline-flex;align-items:center;gap:6px;padding:6px 14px;
+      background:var(--red-faint);border:1px solid var(--red-border);border-radius:var(--radius-sm);
+      color:var(--red-light);font-size:.78rem;font-weight:500;transition:all .2s;
     }
-    .loading-spinner {
-      width: 38px; height: 38px;
-      border: 3px solid var(--card-border);
-      border-top-color: var(--red);
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loading-text { font-size: 0.85rem; color: var(--text-muted); }
-
-    /* Flash position */
-    #flash-area { position: sticky; top: var(--header-h); z-index: 150; }
-
-    /* Header preview link */
-    .header-preview {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 14px;
-      background: var(--red-faint);
-      border: 1px solid var(--red-border);
-      border-radius: var(--radius-sm);
-      color: var(--red-light);
-      font-size: 0.78rem; font-weight: 500;
-      transition: all .2s;
-    }
-    .header-preview:hover { background: var(--red); color: white; }
-
-    /* Checkbox label */
-    .check-label {
-      display: flex; align-items: center; gap: 8px;
-      cursor: pointer; font-size: 0.85rem; color: var(--text-muted);
-    }
-    .check-label input { width:16px;height:16px;accent-color:var(--red); }
-
-    /* Save button spinning state */
-    .btn-save.loading { opacity: 0.7; cursor: not-allowed; }
+    .header-preview:hover{background:var(--red);color:white;}
+    .check-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;color:var(--text-muted);}
+    .check-label input{width:16px;height:16px;accent-color:var(--red);}
+    .perm-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;}
+    .perm-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--input-bg);border-radius:var(--radius-sm);font-size:.83rem;color:var(--text-muted);}
+    .perm-item input{accent-color:var(--red);}
+    .badge-active{display:inline-block;padding:2px 8px;border-radius:3px;font-size:.68rem;font-weight:600;letter-spacing:.8px;text-transform:uppercase;}
+    .badge-active.on{background:rgba(26,102,40,.25);color:#6adf7a;}
+    .badge-active.off{background:rgba(80,80,80,.25);color:var(--text-muted);}
+    .badge-owner{display:inline-block;padding:2px 8px;border-radius:3px;font-size:.68rem;font-weight:600;letter-spacing:.8px;text-transform:uppercase;background:rgba(196,30,43,.2);color:#ff7788;margin-left:6px;}
+    .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:12px;}
+    .photo-item{position:relative;border-radius:var(--radius-sm);overflow:hidden;aspect-ratio:1;border:2px solid transparent;cursor:pointer;transition:border-color .2s;}
+    .photo-item.is-preview{border-color:var(--red);}
+    .photo-item img{width:100%;height:100%;object-fit:cover;}
+    .photo-item-overlay{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;opacity:0;transition:opacity .2s;padding:6px;}
+    .photo-item:hover .photo-item-overlay{opacity:1;}
+    .photo-del{padding:4px 10px;background:rgba(200,30,30,.8);color:white;border:none;border-radius:3px;font-size:.75rem;cursor:pointer;}
+    .photo-preview-badge{position:absolute;top:4px;right:4px;background:var(--red);color:white;font-size:.6rem;padding:2px 5px;border-radius:2px;font-weight:700;}
+    .setup-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse 60% 60% at 30% 40%,rgba(196,30,43,.2) 0%,transparent 70%),radial-gradient(ellipse 50% 50% at 70% 60%,rgba(26,102,40,.15) 0%,transparent 70%),var(--bg);}
   </style>
 </head>
 <body>
 
-<!-- ═══════════ LOGIN SCREEN ═══════════ -->
+<!-- ═══ SETUP (first-time) ═══ -->
+<div id="setup-screen" class="login-body" style="display:none">
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo"><span class="login-crown-fallback">♛</span></div>
+      <h1 class="login-title">NAZUMIDO</h1>
+      <p class="login-sub">Ersteinrichtung</p>
+      <div id="setup-error" class="login-error" style="display:none"></div>
+      <form id="setup-form" class="login-form">
+        <div class="form-group"><label>Setup-Schlüssel (ADMIN_KEY)</label>
+          <input type="password" id="setup-key" required></div>
+        <div class="form-group"><label>Dein Name</label>
+          <input type="text" id="setup-name" required placeholder="Max Muster"></div>
+        <div class="form-group"><label>E-Mail</label>
+          <input type="email" id="setup-email" required></div>
+        <div class="form-group"><label>Passwort (min. 8 Zeichen)</label>
+          <input type="password" id="setup-pw" required minlength="8"></div>
+        <button type="submit" class="btn-login" id="setup-btn">Account erstellen</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ LOGIN ═══ -->
 <div id="login-screen" class="login-body">
   <div class="login-wrap">
     <div class="login-card">
       <div class="login-logo">
-        <img src="../images/logo.png" alt="NazuMido" id="login-logo-img"
+        <img src="../images/logo.png" alt="Logo" id="login-logo-img"
              onerror="this.style.display='none';document.getElementById('login-crown').style.display='block'">
         <span class="login-crown-fallback" id="login-crown" style="display:none">♛</span>
       </div>
       <h1 class="login-title">NAZUMIDO</h1>
       <p class="login-sub">Admin-Panel</p>
-
       <div id="login-error" class="login-error" style="display:none"></div>
-
       <form id="login-form" class="login-form">
-        <div class="form-group">
-          <label>GitHub Personal Access Token</label>
+        <div class="form-group"><label>E-Mail</label>
+          <input type="email" id="login-email" autocomplete="email" required></div>
+        <div class="form-group"><label>Passwort</label>
           <div class="pw-wrap">
-            <input type="password" id="login-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                   autocomplete="off" required spellcheck="false">
-            <button type="button" class="pw-toggle" id="pw-toggle" title="Anzeigen/Verstecken">👁</button>
+            <input type="password" id="login-pw" autocomplete="current-password" required>
+            <button type="button" class="pw-toggle" id="pw-toggle">👁</button>
           </div>
         </div>
-        <button type="submit" class="btn-login" id="login-btn">Einloggen</button>
+        <button type="submit" class="btn-login" id="login-btn">Anmelden</button>
       </form>
-
-      <div class="login-hint">
-        <strong style="color:var(--text-muted)">Token erstellen:</strong><br>
-        GitHub → Settings → Developer settings →<br>
-        Personal access tokens → Tokens (classic)<br>
-        Berechtigung: <code>repo</code> (vollständig)
-      </div>
     </div>
   </div>
 </div>
 
-<!-- ═══════════ ADMIN APP ═══════════ -->
+<!-- ═══ ADMIN APP ═══ -->
 <div id="admin-app" class="admin-wrap" style="display:none">
-
-  <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <div class="sidebar-logo">
         <span class="sidebar-crown">♛</span>
-        <div>
-          <span class="sidebar-name">NAZUMIDO</span>
-          <span class="sidebar-sub">ADMIN PANEL</span>
-        </div>
+        <div><span class="sidebar-name">NAZUMIDO</span><span class="sidebar-sub">ADMIN</span></div>
       </div>
-      <button class="sidebar-close" id="sidebar-close" aria-label="Schließen">✕</button>
+      <button class="sidebar-close" id="sidebar-close">✕</button>
     </div>
-
     <nav class="sidebar-nav">
       <div class="nav-group">
         <span class="nav-group-label">Übersicht</span>
-        <a class="nav-item" data-page="dashboard" href="#" onclick="navigate('dashboard');return false;">
-          <span class="nav-icon">🏠</span> Dashboard
-        </a>
+        <a class="nav-item" data-page="dashboard" href="#" onclick="navigate('dashboard');return false;"><span class="nav-icon">🏠</span> Dashboard</a>
       </div>
       <div class="nav-group">
         <span class="nav-group-label">Inhalte</span>
-        <a class="nav-item" data-page="content" href="#" onclick="navigate('content');return false;">
-          <span class="nav-icon">✏️</span> Texte &amp; Inhalte
-        </a>
-        <a class="nav-item" data-page="events" href="#" onclick="navigate('events');return false;">
-          <span class="nav-icon">📅</span> Veranstaltungen
-        </a>
-        <a class="nav-item" data-page="gallery" href="#" onclick="navigate('gallery');return false;">
-          <span class="nav-icon">🖼️</span> Galerie &amp; Fotos
-        </a>
+        <a class="nav-item" data-page="content"  href="#" onclick="navigate('content');return false;"><span class="nav-icon">✏️</span> Texte &amp; Inhalte</a>
+        <a class="nav-item" data-page="events"   href="#" onclick="navigate('events');return false;"><span class="nav-icon">📅</span> Veranstaltungen</a>
+        <a class="nav-item" data-page="gallery"  href="#" onclick="navigate('gallery');return false;"><span class="nav-icon">🖼️</span> Galerie</a>
       </div>
       <div class="nav-group">
         <span class="nav-group-label">Konfiguration</span>
-        <a class="nav-item" data-page="settings" href="#" onclick="navigate('settings');return false;">
-          <span class="nav-icon">⚙️</span> Einstellungen
-        </a>
+        <a class="nav-item" data-page="settings" href="#" onclick="navigate('settings');return false;"><span class="nav-icon">⚙️</span> Einstellungen</a>
+      </div>
+      <div class="nav-group" id="team-nav" style="display:none">
+        <span class="nav-group-label">Team</span>
+        <a class="nav-item" data-page="users"   href="#" onclick="navigate('users');return false;"  id="nav-users"   style="display:none"><span class="nav-icon">👤</span> Benutzer</a>
+        <a class="nav-item" data-page="members" href="#" onclick="navigate('members');return false;" id="nav-members" style="display:none"><span class="nav-icon">🤝</span> Mitglieder</a>
       </div>
       <div class="nav-group">
         <span class="nav-group-label">Account</span>
-        <a class="nav-item nav-logout" href="#" id="logout-btn" onclick="logout();return false;">
-          <span class="nav-icon">⏻</span> Ausloggen
-        </a>
+        <a class="nav-item" data-page="myaccount" href="#" onclick="navigate('myaccount');return false;"><span class="nav-icon">🔑</span> Mein Account</a>
+        <a class="nav-item nav-logout" href="#" onclick="doLogout();return false;"><span class="nav-icon">⏻</span> Abmelden</a>
       </div>
     </nav>
   </aside>
 
-  <!-- Main -->
   <main class="admin-main">
     <header class="admin-header">
-      <button class="burger-btn" id="burger-btn" aria-label="Menü öffnen">
-        <span></span><span></span><span></span>
-      </button>
+      <button class="burger-btn" id="burger-btn"><span></span><span></span><span></span></button>
       <span class="header-title" id="header-title">Dashboard</span>
-      <a href="../" target="_blank" class="header-preview" title="Website öffnen">
-        🌐 Vorschau
-      </a>
+      <a href="../" target="_blank" class="header-preview">🌐 Website</a>
       <div class="header-user">
-        <div class="header-avatar">N</div>
-        <span>NazuMido</span>
+        <div class="header-avatar" id="header-avatar">N</div>
+        <span id="header-name">Admin</span>
       </div>
     </header>
-
     <div id="flash-area"></div>
     <div class="admin-content" id="page-content"></div>
   </main>
@@ -201,7 +173,7 @@
   <div class="modal-box" id="modal-body"></div>
 </div>
 
-<!-- Loading overlay -->
+<!-- Loading -->
 <div id="loading-overlay" class="loading-overlay" style="display:none">
   <div class="loading-spinner"></div>
   <span class="loading-text" id="loading-msg">Wird geladen…</span>

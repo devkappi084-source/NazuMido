@@ -1,944 +1,905 @@
 /* ============================================================
-   NazuMido Admin – Serverless SPA via GitHub API
+   NazuMido Admin – SPA (Cloudflare KV + Pages Functions)
+   Auth: email + password → session token stored in sessionStorage
    ============================================================ */
 'use strict';
 
-// ── Config ──────────────────────────────────────────────────
-const CFG = {
-  repo:   'devkappi084-source/nazumido',
-  branch: 'claude/great-rubin-tXnlB',
-  api:    'https://api.github.com'
-};
-
-// ── Application state ───────────────────────────────────────
+// ── State ───────────────────────────────────────────────────
 const S = {
-  token:       null,
-  content:     null,  contentSha:  null,
-  events:      null,  eventsSha:   null,
-  settings:    null,  settingsSha: null,
-  gallery:     null,  gallerySha:  null,
-  images:      [],
-  logoSha:     null,
-  saving:      false,
-  page:        'dashboard'
+  token:   null,
+  user:    null,
+  saving:  false,
+  page:    'dashboard',
+  // Cached data
+  content:  null,  events:   null,
+  settings: null,  gallery:  null,
 };
 
-// ── GitHub API ──────────────────────────────────────────────
-const GH = {
+// ── API client ───────────────────────────────────────────────
+const API = {
   _h() {
-    return {
-      'Authorization': `token ${S.token}`,
-      'Accept':        'application/vnd.github.v3+json',
-      'Content-Type':  'application/json'
-    };
+    const h = { 'Content-Type': 'application/json' };
+    if (S.token) h['Authorization'] = `Bearer ${S.token}`;
+    return h;
   },
-
-  async getJSON(path) {
-    const url = `${CFG.api}/repos/${CFG.repo}/contents/${path}?ref=${encodeURIComponent(CFG.branch)}`;
-    const r = await fetch(url, { headers: this._h() });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || `HTTP ${r.status}`); }
-    const d = await r.json();
-    return { data: JSON.parse(b64dec(d.content)), sha: d.sha };
+  async call(method, action, body = null, params = {}) {
+    const url = new URL('/api/admin', location.origin);
+    url.searchParams.set('action', action);
+    Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+    const opts = { method, headers: this._h() };
+    if (body) opts.body = JSON.stringify(body);
+    const r    = await fetch(url, opts);
+    const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
   },
+  get:    (a, p)    => API.call('GET',    a, null, p),
+  post:   (a, b, p) => API.call('POST',   a, b,    p),
+  put:    (a, b, p) => API.call('PUT',    a, b,    p),
+  delete: (a, p)    => API.call('DELETE', a, null, p),
 
-  async putJSON(path, data, sha, message) {
-    return this._put(path, JSON.stringify(data, null, 2), sha, message);
-  },
-
-  async _put(path, text, sha, message) {
-    const body = { message, content: b64enc(text), branch: CFG.branch };
-    if (sha) body.sha = sha;
-    const r = await fetch(`${CFG.api}/repos/${CFG.repo}/contents/${path}`, {
-      method: 'PUT', headers: this._h(), body: JSON.stringify(body)
-    });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || `HTTP ${r.status}`); }
-    return r.json();
-  },
-
-  async putBinary(path, base64, sha, message) {
-    const body = { message, content: base64, branch: CFG.branch };
-    if (sha) body.sha = sha;
-    const r = await fetch(`${CFG.api}/repos/${CFG.repo}/contents/${path}`, {
-      method: 'PUT', headers: this._h(), body: JSON.stringify(body)
-    });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || `HTTP ${r.status}`); }
-    return r.json();
-  },
-
-  async deleteFile(path, sha, message) {
-    const r = await fetch(`${CFG.api}/repos/${CFG.repo}/contents/${path}`, {
-      method: 'DELETE', headers: this._h(),
-      body: JSON.stringify({ message, sha, branch: CFG.branch })
-    });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || `HTTP ${r.status}`); }
-    return r.json();
-  },
-
-  async listDir(path) {
-    const url = `${CFG.api}/repos/${CFG.repo}/contents/${path}?ref=${encodeURIComponent(CFG.branch)}`;
-    const r = await fetch(url, { headers: this._h() });
-    if (!r.ok) return [];
-    const d = await r.json();
-    return Array.isArray(d) ? d : [];
-  },
-
-  async getFileSha(path) {
-    const url = `${CFG.api}/repos/${CFG.repo}/contents/${path}?ref=${encodeURIComponent(CFG.branch)}`;
-    const r = await fetch(url, { headers: this._h() });
-    if (r.status === 404) return null;
-    if (!r.ok) return null;
-    const d = await r.json();
-    return d.sha || null;
+  async uploadPhoto(eventId, file) {
+    const form = new FormData();
+    form.append('photos', file);
+    const url  = `/api/admin?action=upload_photo&event=${encodeURIComponent(eventId)}`;
+    const r    = await fetch(url, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` }, body: form });
+    const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
   }
 };
 
-// ── Base64 helpers (UTF-8 safe) ─────────────────────────────
-function b64enc(str) { return btoa(unescape(encodeURIComponent(str))); }
-function b64dec(b64) { return decodeURIComponent(escape(atob(b64.replace(/\n/g, '')))); }
+// ── Member API client ────────────────────────────────────────
+const MAPI = {
+  _h() {
+    const h = { 'Content-Type': 'application/json' };
+    if (S.token) h['Authorization'] = `Bearer ${S.token}`;
+    return h;
+  },
+  async call(method, action, body = null, params = {}) {
+    const url = new URL('/api/admin', location.origin);
+    url.searchParams.set('action', action);
+    Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+    const opts = { method, headers: this._h() };
+    if (body) opts.body = JSON.stringify(body);
+    const r    = await fetch(url, opts);
+    const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  }
+};
 
-// ── Image resize (client-side, max 1400px, JPEG 85%) ────────
-function resizeImage(file, maxPx = 1400) {
-  return new Promise(resolve => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      let w = img.width, h = img.height;
-      if (w > maxPx || h > maxPx) {
-        if (w >= h) { h = Math.round(h * maxPx / w); w = maxPx; }
-        else        { w = Math.round(w * maxPx / h); h = maxPx; }
-      }
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      c.getContext('2d').drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      c.toBlob(blob => {
-        const fr = new FileReader();
-        fr.onload = e => resolve(e.target.result.split(',')[1]);
-        fr.readAsDataURL(blob);
-      }, 'image/jpeg', 0.85);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      // Fallback: read raw as base64
-      const fr = new FileReader();
-      fr.onload = e => resolve(e.target.result.split(',')[1]);
-      fr.readAsDataURL(file);
-    };
-    img.src = url;
-  });
-}
-
-// ── HTML escape ─────────────────────────────────────────────
-function esc(v) {
-  if (v == null) return '';
-  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ── Sanitize filename ────────────────────────────────────────
-function safeName(name) {
-  return name.toLowerCase()
-    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
-    .replace(/\s+/g,'-').replace(/[^a-z0-9\-_.]/g,'')
-    || 'foto.jpg';
-}
-
-// ── Raw image URL (works for public repos) ───────────────────
-function rawUrl(repoPath) {
-  return `https://raw.githubusercontent.com/${CFG.repo}/${CFG.branch}/${repoPath}`;
-}
-
-// ── Flash messages ───────────────────────────────────────────
-let _flashTimer = null;
+// ── UI helpers ────────────────────────────────────────────────
+let _flashTimer;
 function flash(msg, type = 'success') {
   const area = document.getElementById('flash-area');
   if (!area) return;
-  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
-  area.innerHTML = `<div class="flash flash-${type}"><span>${icon}</span> ${msg}</div>`;
+  area.innerHTML = `<div class="flash flash-${type}"><span>${type==='success'?'✓':'✕'}</span> ${msg}</div>`;
   clearTimeout(_flashTimer);
   if (type !== 'error') _flashTimer = setTimeout(() => { area.innerHTML = ''; }, 4500);
 }
-
-// ── Loading overlay ──────────────────────────────────────────
 function showLoading(msg = 'Wird geladen…') {
-  const el = document.getElementById('loading-overlay');
   document.getElementById('loading-msg').textContent = msg;
-  if (el) el.style.display = 'flex';
+  document.getElementById('loading-overlay').style.display = 'flex';
 }
-function hideLoading() {
-  const el = document.getElementById('loading-overlay');
-  if (el) el.style.display = 'none';
-}
-
-// ── Modal ────────────────────────────────────────────────────
+function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
 function openModal(html) {
-  const overlay = document.getElementById('modal-overlay');
   document.getElementById('modal-body').innerHTML = html;
-  overlay.style.display = 'flex';
+  document.getElementById('modal-overlay').style.display = 'flex';
   document.body.style.overflow = 'hidden';
-  // Focus first input
-  setTimeout(() => {
-    const first = document.querySelector('#modal-body input, #modal-body textarea, #modal-body select');
-    if (first) first.focus();
-  }, 50);
+  setTimeout(() => { document.querySelector('#modal-body input, #modal-body textarea, #modal-body select')?.focus(); }, 50);
 }
 function closeModal() {
   document.getElementById('modal-overlay').style.display = 'none';
   document.body.style.overflow = '';
 }
-
-// ── Tabs ─────────────────────────────────────────────────────
-function initTabs(container) {
-  const root = container || document;
-  root.querySelectorAll('.tab').forEach(tab => {
+function initTabs() {
+  document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', function() {
-      const target = this.dataset.tab;
-      root.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      root.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      const t = this.dataset.tab;
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(x => x.classList.remove('active'));
       this.classList.add('active');
-      const panel = root.getElementById ? root.getElementById('tab-' + target) : document.getElementById('tab-' + target);
-      if (panel) panel.classList.add('active');
+      document.getElementById('tab-' + t)?.classList.add('active');
     });
   });
 }
+function esc(v) {
+  if (v == null) return '';
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function can(perm) { return S.user?.isOwner || S.user?.permissions?.[perm]; }
 
-// ── Auth ─────────────────────────────────────────────────────
-function initLogin() {
+// ── Auth ──────────────────────────────────────────────────────
+function initSetupForm() {
+  document.getElementById('setup-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('setup-btn');
+    const err = document.getElementById('setup-error');
+    btn.textContent = 'Erstelle Account…'; btn.disabled = true; err.style.display = 'none';
+    try {
+      await fetch('/api/admin?action=setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminKey: document.getElementById('setup-key').value.trim(),
+          name:     document.getElementById('setup-name').value.trim(),
+          email:    document.getElementById('setup-email').value.trim(),
+          password: document.getElementById('setup-pw').value,
+        })
+      }).then(async r => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      });
+      document.getElementById('setup-screen').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'flex';
+      flash('Account erstellt! Jetzt anmelden.');
+    } catch(ex) {
+      err.textContent = ex.message; err.style.display = 'block';
+    } finally { btn.textContent = 'Account erstellen'; btn.disabled = false; }
+  });
+}
+
+function initLoginForm() {
   document.getElementById('pw-toggle').addEventListener('click', () => {
-    const inp = document.getElementById('login-token');
+    const inp = document.getElementById('login-pw');
     inp.type = inp.type === 'password' ? 'text' : 'password';
   });
 
   document.getElementById('login-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const token = document.getElementById('login-token').value.trim();
-    if (!token) return;
-
     const btn = document.getElementById('login-btn');
-    const errEl = document.getElementById('login-error');
-    btn.textContent = 'Verbinden…'; btn.disabled = true;
-    errEl.style.display = 'none';
-
+    const err = document.getElementById('login-error');
+    btn.textContent = 'Anmelden…'; btn.disabled = true; err.style.display = 'none';
     try {
-      const r = await fetch(`${CFG.api}/repos/${CFG.repo}`, {
-        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+      const { token, user } = await fetch('/api/admin?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email:    document.getElementById('login-email').value.trim(),
+          password: document.getElementById('login-pw').value,
+        })
+      }).then(async r => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+        return d;
       });
-      if (r.status === 401) throw new Error('Ungültiges Token. Bitte überprüfen.');
-      if (r.status === 404) throw new Error('Repository nicht gefunden oder kein Zugriff.');
-      if (!r.ok) throw new Error(`GitHub Fehler: HTTP ${r.status}`);
-
       S.token = token;
-      sessionStorage.setItem('gh_token', token);
-      await bootApp();
-    } catch(err) {
-      errEl.textContent = err.message;
-      errEl.style.display = 'block';
-      btn.textContent = 'Einloggen';
-      btn.disabled = false;
+      S.user  = user;
+      sessionStorage.setItem('nz_admin_token', token);
+      bootApp();
+    } catch(ex) {
+      err.textContent = ex.message; err.style.display = 'block';
+      btn.textContent = 'Anmelden'; btn.disabled = false;
     }
   });
 }
 
-async function bootApp() {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('admin-app').style.display = 'flex';
-  showLoading('Daten werden geladen…');
+async function checkSession() {
+  const token = sessionStorage.getItem('nz_admin_token');
+  if (!token) return false;
+  S.token = token;
+  try {
+    const { user } = await API.get('check');
+    S.user = user;
+    return true;
+  } catch { S.token = null; sessionStorage.removeItem('nz_admin_token'); return false; }
+}
 
+async function checkSetupNeeded() {
+  try {
+    const r = await fetch('/api/admin?action=setup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) });
+    const d = await r.json();
+    return r.status !== 409; // 409 = already set up
+  } catch { return false; }
+}
+
+async function bootApp() {
+  document.getElementById('login-screen').style.display  = 'none';
+  document.getElementById('setup-screen').style.display  = 'none';
+  document.getElementById('admin-app').style.display     = 'flex';
+  document.getElementById('header-name').textContent     = S.user.name;
+  document.getElementById('header-avatar').textContent   = S.user.name[0].toUpperCase();
+
+  // Show/hide nav items based on permissions
+  if (can('users'))   { document.getElementById('nav-users').style.display   = ''; document.getElementById('team-nav').style.display = ''; }
+  if (can('members')) { document.getElementById('nav-members').style.display = ''; document.getElementById('team-nav').style.display = ''; }
+
+  showLoading('Daten werden geladen…');
   try {
     const [c, ev, st] = await Promise.all([
-      GH.getJSON('data/content.json'),
-      GH.getJSON('data/events.json'),
-      GH.getJSON('data/settings.json')
+      API.get('content'), API.get('events'), API.get('settings')
     ]);
-    S.content  = c.data;  S.contentSha  = c.sha;
-    S.events   = ev.data; S.eventsSha   = ev.sha;
-    S.settings = st.data; S.settingsSha = st.sha;
-
-    try {
-      const g = await GH.getJSON('data/gallery.json');
-      S.gallery = g.data; S.gallerySha = g.sha;
-    } catch { S.gallery = []; S.gallerySha = null; }
-
-    const all = await GH.listDir('images/gallery');
-    S.images = all.filter(f => /\.(jpe?g|png|gif|webp)$/i.test(f.name));
-    S.logoSha = await GH.getFileSha('images/logo.png');
-
-  } catch(err) {
-    flash('Fehler beim Laden: ' + err.message, 'error');
-  }
-
+    S.content  = c.data  || null;
+    S.events   = ev.data || [];
+    S.settings = st.data || null;
+    try { const g = await API.get('gallery'); S.gallery = g.data || []; } catch { S.gallery = []; }
+  } catch(ex) { flash('Fehler beim Laden: ' + ex.message, 'error'); }
   hideLoading();
   navigate('dashboard');
 }
 
-function logout() {
-  if (!confirm('Wirklich ausloggen?')) return;
-  S.token = null;
-  sessionStorage.removeItem('gh_token');
+async function doLogout() {
+  if (!confirm('Wirklich abmelden?')) return;
+  try { await API.post('logout'); } catch {}
+  S.token = null; S.user = null;
+  sessionStorage.removeItem('nz_admin_token');
   document.getElementById('admin-app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('login-token').value = '';
 }
 
 // ── Router ───────────────────────────────────────────────────
-const PAGE_TITLES = {
-  dashboard: 'Dashboard',
-  content:   'Texte & Inhalte',
-  events:    'Veranstaltungen',
-  gallery:   'Galerie & Fotos',
-  settings:  'Einstellungen'
-};
-
+const PAGE_TITLES = { dashboard:'Dashboard', content:'Texte & Inhalte', events:'Veranstaltungen', gallery:'Galerie', settings:'Einstellungen', users:'Benutzer', members:'Mitglieder', myaccount:'Mein Account' };
 function navigate(page) {
   S.page = page;
-  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === page);
-  });
-  const titleEl = document.getElementById('header-title');
-  if (titleEl) titleEl.textContent = PAGE_TITLES[page] || page;
+  document.querySelectorAll('.nav-item[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+  document.getElementById('header-title').textContent = PAGE_TITLES[page] || page;
   document.getElementById('sidebar').classList.remove('open');
-  const content = document.getElementById('page-content');
-  if (content) content.scrollTop = 0;
-
-  const fn = { dashboard: renderDashboard, content: renderContent, events: renderEvents, gallery: renderGallery, settings: renderSettings }[page];
-  if (fn) fn();
+  ({ dashboard:renderDashboard, content:renderContent, events:renderEvents, gallery:renderGallery, settings:renderSettings, users:renderUsers, members:renderMembers, myaccount:renderMyAccount }[page] || (() => {}))();
 }
 
 // ══════════════════════════════════════════════════════════════
 //  DASHBOARD
 // ══════════════════════════════════════════════════════════════
-const MSHORT = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
-const MLONG  = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const TYPE_LABELS = { highlight:'Highlight', ball:'Ball', familie:'Familie', abschluss:'Finale', sonstig:'Event' };
+const MS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const ML = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const TL = { highlight:'Highlight', ball:'Ball', familie:'Familie', abschluss:'Finale', sonstig:'Event' };
 
 function renderDashboard() {
   const now = new Date();
-  const upcoming = (S.events||[]).filter(e => new Date(e.date) >= now).sort((a,b) => a.date.localeCompare(b.date));
-  const next = upcoming[0];
-
+  const up  = (S.events||[]).filter(e => new Date(e.date) >= now).sort((a,b) => a.date.localeCompare(b.date));
+  const next = up[0];
   const nextHtml = next ? (() => {
     const d = new Date(next.date);
-    return `<div class="next-event">
-      <div class="next-event-date">${String(d.getDate()).padStart(2,'0')}<small>${MLONG[d.getMonth()]}</small></div>
-      <div class="next-event-info">
-        <strong>${esc(next.title)}</strong>
-        <span>${esc(next.time||'')}${next.location ? ' · '+esc(next.location) : ''}</span>
-      </div>
-    </div>`;
-  })() : '<p class="empty-hint">Keine bevorstehenden Veranstaltungen</p>';
+    return `<div class="next-event"><div class="next-event-date">${String(d.getDate()).padStart(2,'0')}<small>${ML[d.getMonth()]}</small></div><div class="next-event-info"><strong>${esc(next.title)}</strong><span>${esc(next.time||'')}${next.location?' · '+esc(next.location):''}</span></div></div>`;
+  })() : '<p class="empty-hint">Keine bevorstehenden Termine</p>';
 
-  const rowsHtml = (S.events||[]).sort((a,b) => a.date.localeCompare(b.date)).slice(0,5).map(e => {
+  const rows = (S.events||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(0,5).map(e=>{
     const d = new Date(e.date);
-    const past = d < now;
-    return `<tr class="${past?'row-past':''}">
-      <td class="td-date">${String(d.getDate()).padStart(2,'0')}. ${MSHORT[d.getMonth()]} ${d.getFullYear()}</td>
-      <td>${esc(e.title)}</td>
-      <td><span class="badge-type type-${esc(e.type)}">${esc(TYPE_LABELS[e.type]||e.type)}</span></td>
-    </tr>`;
+    return `<tr class="${d<now?'row-past':''}"><td class="td-date">${String(d.getDate()).padStart(2,'0')}. ${MS[d.getMonth()]} ${d.getFullYear()}</td><td>${esc(e.title)}</td><td><span class="badge-type type-${esc(e.type)}">${esc(TL[e.type]||e.type)}</span></td></tr>`;
   }).join('');
-
-  const thumbsHtml = S.images.slice(0,8).map(img =>
-    `<div class="dash-gallery-item"><img src="${rawUrl('images/gallery/'+img.name)}?v=${Date.now()}" alt="${esc(img.name)}" loading="lazy" onerror="this.parentElement.style.background='var(--input-bg)'"></div>`
-  ).join('');
 
   document.getElementById('page-content').innerHTML = `
     <div class="dashboard-grid">
-      <div class="stat-card"><span class="stat-icon">📅</span><div><div class="stat-number">${(S.events||[]).length}</div><div class="stat-label">Termine gesamt</div></div></div>
-      <div class="stat-card"><span class="stat-icon">⏭️</span><div><div class="stat-number">${upcoming.length}</div><div class="stat-label">Bevorstehend</div></div></div>
-      <div class="stat-card"><span class="stat-icon">🖼️</span><div><div class="stat-number">${S.images.length}</div><div class="stat-label">Fotos</div></div></div>
-      <div class="stat-card"><span class="stat-icon">👥</span><div><div class="stat-number">${esc(S.settings?.general?.members||'—')}</div><div class="stat-label">Mitglieder</div></div></div>
+      <div class="stat-card"><span class="stat-icon">📅</span><div><div class="stat-number">${(S.events||[]).length}</div><div class="stat-label">Termine</div></div></div>
+      <div class="stat-card"><span class="stat-icon">⏭️</span><div><div class="stat-number">${up.length}</div><div class="stat-label">Bevorstehend</div></div></div>
+      <div class="stat-card"><span class="stat-icon">🤝</span><div><div class="stat-number" id="dash-members">—</div><div class="stat-label">Mitglieder</div></div></div>
+      <div class="stat-card"><span class="stat-icon">👤</span><div><div class="stat-number" id="dash-users">—</div><div class="stat-label">Admin-Nutzer</div></div></div>
     </div>
-
     <div class="dashboard-row">
-      <div class="dash-card">
-        <div class="dash-card-head"><h2>Nächster Termin</h2><a class="btn-sm-link" href="#" onclick="navigate('events');return false;">Alle Termine →</a></div>
-        ${nextHtml}
-      </div>
-      <div class="dash-card">
-        <div class="dash-card-head"><h2>Schnellzugriff</h2></div>
-        <div class="quick-actions">
-          <button class="quick-btn" onclick="navigate('events')"><span>＋</span> Termin hinzufügen</button>
-          <button class="quick-btn" onclick="navigate('gallery')"><span>📷</span> Foto hochladen</button>
-          <button class="quick-btn" onclick="navigate('content')"><span>✏️</span> Texte bearbeiten</button>
-          <button class="quick-btn" onclick="navigate('settings')"><span>⚙️</span> Einstellungen</button>
-        </div>
-      </div>
+      <div class="dash-card"><div class="dash-card-head"><h2>Nächster Termin</h2><a class="btn-sm-link" href="#" onclick="navigate('events');return false;">Alle →</a></div>${nextHtml}</div>
+      <div class="dash-card"><div class="dash-card-head"><h2>Schnellzugriff</h2></div><div class="quick-actions">
+        <button class="quick-btn" onclick="navigate('events')"><span>＋</span> Termin hinzufügen</button>
+        <button class="quick-btn" onclick="navigate('gallery')"><span>📷</span> Foto hochladen</button>
+        <button class="quick-btn" onclick="navigate('content')"><span>✏️</span> Texte bearbeiten</button>
+        <button class="quick-btn" onclick="navigate('settings')"><span>⚙️</span> Einstellungen</button>
+      </div></div>
     </div>
-
     <div class="dashboard-row" style="margin-top:18px">
-      <div class="dash-card">
-        <div class="dash-card-head"><h2>Termine (nächste 5)</h2><a class="btn-sm-link" href="#" onclick="navigate('events');return false;">Alle bearbeiten →</a></div>
-        ${rowsHtml ? `<table class="admin-table"><thead><tr><th>Datum</th><th>Titel</th><th>Typ</th></tr></thead><tbody>${rowsHtml}</tbody></table>` : '<p class="empty-hint">Noch keine Termine angelegt</p>'}
+      <div class="dash-card"><div class="dash-card-head"><h2>Termine (nächste 5)</h2><a class="btn-sm-link" href="#" onclick="navigate('events');return false;">Alle bearbeiten →</a></div>
+        ${rows?`<table class="admin-table"><thead><tr><th>Datum</th><th>Titel</th><th>Typ</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="empty-hint">Noch keine Termine</p>'}
       </div>
-      ${S.images.length > 0 ? `
-      <div class="dash-card">
-        <div class="dash-card-head"><h2>Galerie-Vorschau</h2><a class="btn-sm-link" href="#" onclick="navigate('gallery');return false;">Verwalten →</a></div>
-        <div class="dash-gallery">${thumbsHtml}</div>
-      </div>` : ''}
-    </div>
-  `;
+    </div>`;
+
+  // Load counts async
+  if (can('users'))   API.get('users').then(d => { const el=document.getElementById('dash-users'); if(el) el.textContent=(d.users||[]).length; }).catch(()=>{});
+  if (can('members')) API.get('members').then(d => { const el=document.getElementById('dash-members'); if(el) el.textContent=(d.members||[]).length; }).catch(()=>{});
 }
 
 // ══════════════════════════════════════════════════════════════
 //  CONTENT
 // ══════════════════════════════════════════════════════════════
 function renderContent() {
-  const h = S.content?.hero   || {};
-  const a = S.content?.about  || {};
-  const g = S.content?.groups || {};
-
+  const h = S.content?.hero||{}, a = S.content?.about||{}, g = S.content?.groups||{};
   document.getElementById('page-content').innerHTML = `
     <div class="tabs">
-      <button class="tab active" data-tab="hero">Hero / Titel</button>
+      <button class="tab active" data-tab="hero">Hero</button>
       <button class="tab" data-tab="about">Über uns</button>
       <button class="tab" data-tab="groups">Gruppen</button>
     </div>
-
-    <!-- TAB: Hero -->
-    <div class="tab-panel active" id="tab-hero">
-      <div class="form-card">
-        <div class="form-card-title">Hero-Bereich (Startseite oben)</div>
-        <div class="form-grid-2">
-          <div class="form-group"><label>Vortext (über dem Titel)</label><input id="c-pretext" value="${esc(h.pretext)}"></div>
-          <div class="form-group"><label>Standort</label><input id="c-location" value="${esc(h.location)}"></div>
-        </div>
-        <div class="form-grid-2">
-          <div class="form-group"><label>Titel (Vereinsname)</label><input id="c-title" value="${esc(h.title)}"></div>
-          <div class="form-group"><label>Untertitel</label><input id="c-subtitle" value="${esc(h.subtitle)}"></div>
-        </div>
-        <div class="form-group"><label>Motto / Slogan</label><input id="c-motto" value="${esc(h.motto)}" placeholder='z.B. "Jetzt wird&apos;s närrisch!"'></div>
-        <div class="form-actions"><button class="btn-save" onclick="saveContent(this)">Speichern &amp; Veröffentlichen</button></div>
-      </div>
-    </div>
-
-    <!-- TAB: About -->
-    <div class="tab-panel" id="tab-about">
-      <div class="form-card">
-        <div class="form-card-title">Über uns – Haupttexte</div>
-        <div class="form-group"><label>Eyebrow (kleiner Text über der Überschrift)</label><input id="c-eyebrow" value="${esc(a.eyebrow)}"></div>
-        <div class="form-group"><label>Lead-Text (Einleitung, HTML erlaubt z.B. &lt;strong&gt;)</label><textarea id="c-lead" rows="3">${esc(a.lead)}</textarea></div>
-        <div class="form-group"><label>Absatz 1</label><textarea id="c-text1" rows="3">${esc(a.text1)}</textarea></div>
-        <div class="form-group"><label>Absatz 2 (HTML erlaubt z.B. &lt;em&gt;)</label><textarea id="c-text2" rows="3">${esc(a.text2)}</textarea></div>
-        <div class="form-grid-2">
-          <div class="form-group"><label>Statistik: Jahre (z.B. "50+")</label><input id="c-stat-years" value="${esc(a.stat_years)}"></div>
-          <div class="form-group"><label>Statistik: Mitglieder (z.B. "100+")</label><input id="c-stat-members" value="${esc(a.stat_members)}"></div>
-        </div>
-      </div>
-      <div class="form-card">
-        <div class="form-card-title">Info-Karten (3 Kacheln)</div>
-        <div class="form-grid-3">
-          <div class="form-group"><label>Karte 1 – Titel</label><input id="c-card1-title" value="${esc(a.card1_title)}"></div>
-          <div class="form-group"><label>Karte 2 – Titel</label><input id="c-card2-title" value="${esc(a.card2_title)}"></div>
-          <div class="form-group"><label>Karte 3 – Titel</label><input id="c-card3-title" value="${esc(a.card3_title)}"></div>
-        </div>
-        <div class="form-group"><label>Karte 1 – Text</label><textarea id="c-card1-text" rows="2">${esc(a.card1_text)}</textarea></div>
-        <div class="form-group"><label>Karte 2 – Text</label><textarea id="c-card2-text" rows="2">${esc(a.card2_text)}</textarea></div>
-        <div class="form-group"><label>Karte 3 – Text</label><textarea id="c-card3-text" rows="2">${esc(a.card3_text)}</textarea></div>
-        <div class="form-actions"><button class="btn-save" onclick="saveContent(this)">Speichern &amp; Veröffentlichen</button></div>
-      </div>
-    </div>
-
-    <!-- TAB: Groups -->
-    <div class="tab-panel" id="tab-groups">
-      <div class="form-card">
-        <div class="form-card-title">Gruppen-Beschreibungen</div>
-        <div class="form-group"><label>🩰 Garde – Beschreibung</label><textarea id="c-garde" rows="3">${esc(g.garde_desc)}</textarea></div>
-        <div class="form-group"><label>👑 Elferrat – Beschreibung</label><textarea id="c-elferrat" rows="3">${esc(g.elferrat_desc)}</textarea></div>
-        <div class="form-group"><label>💑 Prinzenpaar – Beschreibung</label><textarea id="c-prinzen" rows="3">${esc(g.prinzen_desc)}</textarea></div>
-        <div class="form-group"><label>🧙 Hexen – Beschreibung</label><textarea id="c-hexen" rows="3">${esc(g.hexen_desc)}</textarea></div>
-        <div class="form-actions"><button class="btn-save" onclick="saveContent(this)">Speichern &amp; Veröffentlichen</button></div>
-      </div>
-    </div>
-  `;
+    <div class="tab-panel active" id="tab-hero"><div class="form-card"><div class="form-card-title">Hero-Bereich</div>
+      <div class="form-grid-2"><div class="form-group"><label>Vortext</label><input id="c-pretext" value="${esc(h.pretext)}"></div><div class="form-group"><label>Standort</label><input id="c-location" value="${esc(h.location)}"></div></div>
+      <div class="form-grid-2"><div class="form-group"><label>Titel</label><input id="c-title" value="${esc(h.title)}"></div><div class="form-group"><label>Untertitel</label><input id="c-subtitle" value="${esc(h.subtitle)}"></div></div>
+      <div class="form-group"><label>Motto</label><input id="c-motto" value="${esc(h.motto)}"></div>
+      <div class="form-actions"><button class="btn-save" onclick="saveContent(this)">Speichern &amp; Live schalten</button></div>
+    </div></div>
+    <div class="tab-panel" id="tab-about"><div class="form-card"><div class="form-card-title">Über uns</div>
+      <div class="form-group"><label>Eyebrow</label><input id="c-eyebrow" value="${esc(a.eyebrow)}"></div>
+      <div class="form-group"><label>Lead (HTML)</label><textarea id="c-lead" rows="3">${esc(a.lead)}</textarea></div>
+      <div class="form-group"><label>Absatz 1</label><textarea id="c-text1" rows="3">${esc(a.text1)}</textarea></div>
+      <div class="form-group"><label>Absatz 2 (HTML)</label><textarea id="c-text2" rows="3">${esc(a.text2)}</textarea></div>
+      <div class="form-grid-2"><div class="form-group"><label>Stat: Jahre</label><input id="c-stat-years" value="${esc(a.stat_years)}"></div><div class="form-group"><label>Stat: Mitglieder</label><input id="c-stat-members" value="${esc(a.stat_members)}"></div></div>
+    </div><div class="form-card"><div class="form-card-title">Info-Karten</div>
+      <div class="form-grid-3"><div class="form-group"><label>Karte 1 Titel</label><input id="c-card1-title" value="${esc(a.card1_title)}"></div><div class="form-group"><label>Karte 2 Titel</label><input id="c-card2-title" value="${esc(a.card2_title)}"></div><div class="form-group"><label>Karte 3 Titel</label><input id="c-card3-title" value="${esc(a.card3_title)}"></div></div>
+      <div class="form-group"><label>Karte 1 Text</label><textarea id="c-card1-text" rows="2">${esc(a.card1_text)}</textarea></div>
+      <div class="form-group"><label>Karte 2 Text</label><textarea id="c-card2-text" rows="2">${esc(a.card2_text)}</textarea></div>
+      <div class="form-group"><label>Karte 3 Text</label><textarea id="c-card3-text" rows="2">${esc(a.card3_text)}</textarea></div>
+      <div class="form-actions"><button class="btn-save" onclick="saveContent(this)">Speichern &amp; Live schalten</button></div>
+    </div></div>
+    <div class="tab-panel" id="tab-groups"><div class="form-card"><div class="form-card-title">Gruppen</div>
+      <div class="form-group"><label>🩰 Garde</label><textarea id="c-garde" rows="3">${esc(g.garde_desc)}</textarea></div>
+      <div class="form-group"><label>👑 Elferrat</label><textarea id="c-elferrat" rows="3">${esc(g.elferrat_desc)}</textarea></div>
+      <div class="form-group"><label>💑 Prinzenpaar</label><textarea id="c-prinzen" rows="3">${esc(g.prinzen_desc)}</textarea></div>
+      <div class="form-group"><label>🧙 Hexen</label><textarea id="c-hexen" rows="3">${esc(g.hexen_desc)}</textarea></div>
+      <div class="form-actions"><button class="btn-save" onclick="saveContent(this)">Speichern &amp; Live schalten</button></div>
+    </div></div>`;
   initTabs();
 }
 
 async function saveContent(btn) {
-  if (S.saving) return;
-  S.saving = true;
-  const orig = btn.textContent;
-  btn.textContent = 'Speichern…'; btn.disabled = true;
-
-  const val = id => document.getElementById(id)?.value ?? '';
-
+  if (S.saving) return; S.saving = true;
+  const o = btn.textContent; btn.textContent = 'Speichern…'; btn.disabled = true;
+  const v = id => document.getElementById(id)?.value ?? '';
   try {
-    const newContent = {
-      hero: {
-        pretext:  val('c-pretext'),
-        title:    val('c-title'),
-        subtitle: val('c-subtitle'),
-        location: val('c-location'),
-        motto:    val('c-motto')
-      },
-      about: {
-        eyebrow:      val('c-eyebrow'),
-        lead:         val('c-lead'),
-        text1:        val('c-text1'),
-        text2:        val('c-text2'),
-        stat_years:   val('c-stat-years'),
-        stat_members: val('c-stat-members'),
-        card1_title:  val('c-card1-title'),
-        card1_text:   val('c-card1-text'),
-        card2_title:  val('c-card2-title'),
-        card2_text:   val('c-card2-text'),
-        card3_title:  val('c-card3-title'),
-        card3_text:   val('c-card3-text')
-      },
-      groups: {
-        garde_desc:    val('c-garde'),
-        elferrat_desc: val('c-elferrat'),
-        prinzen_desc:  val('c-prinzen'),
-        hexen_desc:    val('c-hexen')
-      }
+    const data = {
+      hero:   { pretext:v('c-pretext'), title:v('c-title'), subtitle:v('c-subtitle'), location:v('c-location'), motto:v('c-motto') },
+      about:  { eyebrow:v('c-eyebrow'), lead:v('c-lead'), text1:v('c-text1'), text2:v('c-text2'), stat_years:v('c-stat-years'), stat_members:v('c-stat-members'), card1_title:v('c-card1-title'), card1_text:v('c-card1-text'), card2_title:v('c-card2-title'), card2_text:v('c-card2-text'), card3_title:v('c-card3-title'), card3_text:v('c-card3-text') },
+      groups: { garde_desc:v('c-garde'), elferrat_desc:v('c-elferrat'), prinzen_desc:v('c-prinzen'), hexen_desc:v('c-hexen') }
     };
-
-    const res = await GH.putJSON('data/content.json', newContent, S.contentSha, 'Admin: Inhalte aktualisiert');
-    S.content    = newContent;
-    S.contentSha = res.content.sha;
-    flash('✓ Gespeichert! Cloudflare Pages baut die Seite neu (~1 Min.)');
-  } catch(err) {
-    flash('Fehler: ' + err.message, 'error');
-  } finally {
-    S.saving = false;
-    btn.textContent = orig; btn.disabled = false;
-  }
+    await API.put('content', data);
+    S.content = data;
+    flash('Inhalte gespeichert! Sofort live.');
+  } catch(ex) { flash('Fehler: ' + ex.message, 'error'); }
+  finally { S.saving=false; btn.textContent=o; btn.disabled=false; }
 }
 
 // ══════════════════════════════════════════════════════════════
 //  EVENTS
 // ══════════════════════════════════════════════════════════════
 function renderEvents() {
-  const sorted = (S.events||[]).slice().sort((a,b) => a.date.localeCompare(b.date));
   const now = new Date();
-
-  const rows = sorted.map(e => {
-    const d    = new Date(e.date);
-    const past = d < now;
-    return `<tr class="${past?'row-past':''}">
-      <td class="td-date">${String(d.getDate()).padStart(2,'0')}. ${MSHORT[d.getMonth()]} ${d.getFullYear()}</td>
-      <td>
-        ${esc(e.title)}
-        ${e.featured ? '<span class="badge-featured">★</span>' : ''}
-        ${past ? '<span class="badge-past">Vergangen</span>' : ''}
-      </td>
-      <td><span class="badge-type type-${esc(e.type)}">${esc(TYPE_LABELS[e.type]||e.type)}</span></td>
+  const rows = (S.events||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e => {
+    const d = new Date(e.date);
+    return `<tr class="${d<now?'row-past':''}">
+      <td class="td-date">${String(d.getDate()).padStart(2,'0')}. ${MS[d.getMonth()]} ${d.getFullYear()}</td>
+      <td>${esc(e.title)}${e.featured?'<span class="badge-featured">★</span>':''}</td>
+      <td><span class="badge-type type-${esc(e.type)}">${esc(TL[e.type]||e.type)}</span></td>
       <td style="color:var(--text-muted);font-size:.82rem">${esc(e.location||'—')}</td>
       <td><div class="td-actions">
         <button class="action-edit" onclick="editEvent(${e.id})">✏ Bearbeiten</button>
-        <button class="action-del"  onclick="deleteEvent(${e.id})">✕ Löschen</button>
+        <button class="action-edit" style="color:#88aaff;border-color:rgba(136,170,255,.3)" onclick="managePhotos(${e.id},'${esc(e.title)}')">📷 Fotos</button>
+        <button class="action-del" onclick="deleteEvent(${e.id})">✕</button>
       </div></td>
     </tr>`;
   }).join('');
 
   document.getElementById('page-content').innerHTML = `
-    <div class="page-actions">
-      <button class="btn-add" onclick="editEvent(null)">＋ Termin hinzufügen</button>
-    </div>
-    <div class="table-card">
-      <table class="admin-table">
-        <thead><tr><th>Datum</th><th>Titel</th><th>Typ</th><th>Ort</th><th>Aktionen</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" class="empty-hint" style="padding:28px;text-align:center">Noch keine Termine vorhanden</td></tr>'}</tbody>
-      </table>
-    </div>
-  `;
+    <div class="page-actions"><button class="btn-add" onclick="editEvent(null)">＋ Termin hinzufügen</button></div>
+    <div class="table-card"><table class="admin-table">
+      <thead><tr><th>Datum</th><th>Titel</th><th>Typ</th><th>Ort</th><th>Aktionen</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" class="empty-hint" style="padding:28px;text-align:center">Keine Termine</td></tr>'}</tbody>
+    </table></div>`;
 }
 
 function editEvent(id) {
-  const e   = id != null ? (S.events||[]).find(ev => ev.id === id) : null;
-  const isNew = !e;
-
+  const e = id!=null ? (S.events||[]).find(x=>x.id===id) : null;
   openModal(`
-    <div class="modal-head">
-      <h2>${isNew ? '＋ Termin hinzufügen' : '✏ Termin bearbeiten'}</h2>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-head"><h2>${e?'✏ Bearbeiten':'＋ Neuer Termin'}</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="modal-form">
       <div class="form-grid-2">
         <div class="form-group"><label>Datum *</label><input type="date" id="ev-date" value="${esc(e?.date||'')}"></div>
-        <div class="form-group"><label>Uhrzeit</label><input type="text" id="ev-time" placeholder="20:00 Uhr" value="${esc(e?.time||'')}"></div>
+        <div class="form-group"><label>Uhrzeit</label><input id="ev-time" placeholder="20:00 Uhr" value="${esc(e?.time||'')}"></div>
       </div>
-      <div class="form-group"><label>Titel *</label><input id="ev-title" value="${esc(e?.title||'')}" placeholder="z.B. Großer Faschingsball"></div>
-      <div class="form-group"><label>Beschreibung</label><textarea id="ev-desc" rows="3" placeholder="Kurze Beschreibung…">${esc(e?.description||'')}</textarea></div>
+      <div class="form-group"><label>Titel *</label><input id="ev-title" value="${esc(e?.title||'')}"></div>
+      <div class="form-group"><label>Beschreibung</label><textarea id="ev-desc" rows="3">${esc(e?.description||'')}</textarea></div>
       <div class="form-grid-2">
-        <div class="form-group"><label>Ort</label><input id="ev-location" value="${esc(e?.location||'')}" placeholder="Kirchdorf an der Krems"></div>
-        <div class="form-group">
-          <label>Typ</label>
-          <select id="ev-type">
-            ${Object.entries(TYPE_LABELS).map(([v,l]) => `<option value="${v}"${e?.type===v?' selected':''}>${l}</option>`).join('')}
-          </select>
-        </div>
+        <div class="form-group"><label>Ort</label><input id="ev-location" value="${esc(e?.location||'')}"></div>
+        <div class="form-group"><label>Typ</label><select id="ev-type">
+          ${Object.entries(TL).map(([v,l])=>`<option value="${v}"${e?.type===v?' selected':''}>${l}</option>`).join('')}
+        </select></div>
       </div>
-      <div class="form-group">
-        <label class="check-label">
-          <input type="checkbox" id="ev-featured" ${e?.featured?'checked':''}>
-          Als Featured markieren (wird groß auf der Seite hervorgehoben)
-        </label>
-      </div>
+      <div class="form-group"><label class="check-label"><input type="checkbox" id="ev-featured" ${e?.featured?'checked':''}> Als Featured markieren (großes Bild auf Startseite)</label></div>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Abbrechen</button>
-      <button class="btn-save" onclick="saveEvent(${id!=null?id:'null'}, this)">Speichern</button>
-    </div>
-  `);
+      <button class="btn-save" onclick="saveEvent(${id!=null?id:'null'},this)">Speichern</button>
+    </div>`);
 }
 
 async function saveEvent(id, btn) {
   const date  = document.getElementById('ev-date').value;
   const title = document.getElementById('ev-title').value.trim();
-  if (!date || !title) { flash('Datum und Titel sind Pflichtfelder.', 'error'); return; }
-
-  const orig = btn.textContent;
-  btn.textContent = 'Speichern…'; btn.disabled = true;
-
+  if (!date||!title) { flash('Datum und Titel erforderlich','error'); return; }
+  const o = btn.textContent; btn.textContent='Speichern…'; btn.disabled=true;
   try {
     const featured = document.getElementById('ev-featured').checked;
-    const newEv = {
-      id:          id != null ? id : Date.now(),
-      date,
-      time:        document.getElementById('ev-time').value.trim(),
-      title,
-      description: document.getElementById('ev-desc').value.trim(),
-      location:    document.getElementById('ev-location').value.trim(),
-      type:        document.getElementById('ev-type').value,
-      featured
-    };
-
-    // Un-feature others when new one is featured
-    let evList = (S.events||[]).slice();
-    if (featured) evList = evList.map(e => ({...e, featured: false}));
-
-    if (id != null) {
-      S.events = evList.map(e => e.id === id ? newEv : e);
-    } else {
-      S.events = [...evList, newEv];
-    }
-
-    const res = await GH.putJSON('data/events.json', S.events, S.eventsSha,
-      `Admin: Termin ${id != null ? 'bearbeitet' : 'hinzugefügt'} – ${title}`);
-    S.eventsSha = res.content.sha;
-    closeModal();
-    flash('Termin gespeichert!');
-    renderEvents();
-  } catch(err) {
-    flash('Fehler: ' + err.message, 'error');
-    btn.textContent = orig; btn.disabled = false;
-  }
+    const newEv = { id: id!=null?id:Date.now(), date, time:document.getElementById('ev-time').value.trim(), title, description:document.getElementById('ev-desc').value.trim(), location:document.getElementById('ev-location').value.trim(), type:document.getElementById('ev-type').value, featured };
+    let list = (S.events||[]).slice();
+    if (featured) list = list.map(e=>({...e,featured:false}));
+    S.events = id!=null ? list.map(e=>e.id===id?newEv:e) : [...list, newEv];
+    await API.put('events', S.events);
+    closeModal(); flash('Termin gespeichert!'); renderEvents();
+  } catch(ex) { flash('Fehler: '+ex.message,'error'); btn.textContent=o; btn.disabled=false; }
 }
 
 async function deleteEvent(id) {
-  const ev = (S.events||[]).find(e => e.id === id);
-  if (!ev) return;
-  if (!confirm(`Termin "${ev.title}" wirklich löschen?`)) return;
-
+  const ev = (S.events||[]).find(e=>e.id===id);
+  if (!ev||!confirm(`"${ev.title}" löschen?`)) return;
   try {
-    S.events = S.events.filter(e => e.id !== id);
-    const res = await GH.putJSON('data/events.json', S.events, S.eventsSha, `Admin: Termin gelöscht – ${ev.title}`);
-    S.eventsSha = res.content.sha;
-    flash('Termin gelöscht.');
-    renderEvents();
-  } catch(err) {
-    flash('Fehler: ' + err.message, 'error');
+    S.events = S.events.filter(e=>e.id!==id);
+    await API.put('events', S.events);
+    flash('Termin gelöscht.'); renderEvents();
+  } catch(ex) { flash('Fehler: '+ex.message,'error'); }
+}
+
+// ── Event photo management ────────────────────────────────────
+async function managePhotos(eventId, title) {
+  if (!can('gallery')) { flash('Keine Berechtigung','error'); return; }
+  showLoading('Fotos laden…');
+  let photos = [], previews = [];
+  try {
+    const r = await API.get('event_photos', { event: eventId });
+    photos   = r.photos   || [];
+    previews = r.previews || [];
+  } catch {}
+  hideLoading();
+
+  const previewNames = new Set(previews.map(p => p.filename));
+  const thumbs = photos.map(p => `
+    <div class="photo-item ${previewNames.has(p.filename)?'is-preview':''}" id="ph-${esc(p.filename)}" data-fn="${esc(p.filename)}">
+      <img src="/api/admin?action=sign_download&event=${eventId}&file=${encodeURIComponent(p.filename)}" alt="${esc(p.filename)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22/>'">
+      ${previewNames.has(p.filename)?'<span class="photo-preview-badge">Preview</span>':''}
+      <div class="photo-item-overlay">
+        <span style="font-size:.7rem;color:white;word-break:break-all">${esc(p.filename)}</span>
+        <button class="photo-del" onclick="deleteEventPhoto(${eventId},'${esc(p.filename)}')">Löschen</button>
+      </div>
+    </div>`).join('');
+
+  openModal(`
+    <div class="modal-head"><h2>📷 Fotos – ${esc(title)}</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-form">
+      <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:14px">Klicke auf ein Foto um es als Vorschau (max. 3) zu markieren. Vorschaubilder sind auch ohne Login sichtbar.</p>
+      <label class="btn-add" style="cursor:pointer;margin-bottom:16px;display:inline-flex">
+        📤 Fotos hochladen
+        <input type="file" accept="image/*" multiple style="display:none" onchange="uploadEventPhotos(${eventId},this)">
+      </label>
+      <div class="photo-grid" id="photo-grid">${thumbs||'<p class="empty-hint">Noch keine Fotos hochgeladen</p>'}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Schließen</button>
+      <button class="btn-save" onclick="savePreviewPhotos(${eventId})">Vorschau speichern</button>
+    </div>`);
+
+  // Toggle preview on click
+  document.querySelectorAll('.photo-item').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      const selected = document.querySelectorAll('.photo-item.is-preview');
+      if (!el.classList.contains('is-preview') && selected.length >= 3) {
+        flash('Maximal 3 Vorschaubilder', 'error'); return;
+      }
+      el.classList.toggle('is-preview');
+      const badge = el.querySelector('.photo-preview-badge');
+      if (el.classList.contains('is-preview')) {
+        if (!badge) el.insertAdjacentHTML('afterbegin', '<span class="photo-preview-badge">Preview</span>');
+      } else { badge?.remove(); }
+    });
+  });
+}
+
+async function uploadEventPhotos(eventId, input) {
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  showLoading(`${files.length} Foto(s) werden hochgeladen…`);
+  let done = 0;
+  for (const file of files) {
+    try {
+      await API.uploadPhoto(eventId, file);
+      done++;
+    } catch(ex) { flash(`Fehler bei ${file.name}: ${ex.message}`, 'error'); }
   }
+  hideLoading();
+  if (done > 0) { flash(`${done} Foto(s) hochgeladen!`); closeModal(); }
+}
+
+async function deleteEventPhoto(eventId, filename) {
+  if (!confirm(`"${filename}" löschen?`)) return;
+  try {
+    await API.delete('delete_photo', { event: eventId, file: filename });
+    document.getElementById(`ph-${filename}`)?.remove();
+    flash('Foto gelöscht.');
+  } catch(ex) { flash('Fehler: ' + ex.message, 'error'); }
+}
+
+async function savePreviewPhotos(eventId) {
+  const selected = Array.from(document.querySelectorAll('.photo-item.is-preview')).map(el => ({ filename: el.dataset.fn, base64: null }));
+  try {
+    await API.put('preview_photos', { previews: selected }, { event: eventId });
+    closeModal(); flash('Vorschaubilder gesetzt!');
+  } catch(ex) { flash('Fehler: ' + ex.message, 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════
-//  GALLERY
+//  GALLERY (homepage decorative photos via GitHub API)
 // ══════════════════════════════════════════════════════════════
 function renderGallery() {
-  const thumbs = S.images.map(img => `
+  const items = (S.gallery||[]);
+  const grid  = items.map((img,i) => `
     <div class="gallery-manage-item">
-      <img src="${rawUrl('images/gallery/'+img.name)}?v=${Date.now()}" alt="${esc(img.name)}" loading="lazy"
-           onerror="this.style.display='none'">
+      <img src="../images/gallery/${esc(img.filename)}" alt="${esc(img.filename)}" loading="lazy" onerror="this.style.opacity='.2'">
       <div class="gallery-manage-overlay">
-        <span class="gallery-img-name">${esc(img.name)}</span>
-        <button class="gallery-del-btn" onclick="deleteGalleryImage('${esc(img.name)}','${esc(img.sha)}')">🗑 Löschen</button>
+        <span class="gallery-img-name">${esc(img.filename)}</span>
+        <div class="form-group" style="margin:4px 0"><input class="gal-title-inp" data-fn="${esc(img.filename)}" value="${esc(img.title||'')}" placeholder="Bildbeschriftung" style="font-size:.75rem;padding:5px 8px"></div>
+        <button class="gallery-del-btn" onclick="deleteGalleryItem('${esc(img.filename)}')">🗑 Entfernen</button>
       </div>
     </div>`).join('');
 
   document.getElementById('page-content').innerHTML = `
-    <!-- Logo -->
     <div class="form-card" style="margin-bottom:20px">
-      <div class="form-card-title">Logo / Vereinswappen</div>
+      <div class="form-card-title">Logo hochladen</div>
       <div class="logo-preview-wrap">
-        <img class="logo-preview" id="logo-prev"
-             src="${rawUrl('images/logo.png')}?v=${Date.now()}"
-             alt="Logo" onerror="this.style.opacity='.2'">
-        <div>
-          <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
-            Empfohlen: PNG mit Transparenz, mind. 200×200 px
-          </p>
-          <label class="btn-add" style="cursor:pointer">
-            📁 Logo hochladen
-            <input type="file" accept="image/*" style="display:none" onchange="uploadLogo(this)">
-          </label>
+        <img class="logo-preview" src="../images/logo.png?v=${Date.now()}" alt="Logo" onerror="this.style.opacity='.2'">
+        <div><p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">PNG mit Transparenz empfohlen</p>
+          <label class="btn-add" style="cursor:pointer">📁 Logo hochladen<input type="file" accept="image/*" style="display:none" onchange="uploadLogoGH(this)"></label>
         </div>
       </div>
     </div>
-
-    <!-- Upload -->
     <div class="form-card upload-card" style="margin-bottom:20px">
-      <div class="form-card-title">Fotos hochladen</div>
+      <div class="form-card-title">Galerie-Fotos (Startseite)</div>
       <div class="upload-drop" id="upload-drop">
-        <input type="file" class="upload-input" id="gallery-input"
-               accept="image/*" multiple onchange="handleGalleryUpload(this.files)">
-        <div class="upload-drop-inner">
-          <span class="upload-icon">📸</span>
-          <p>Fotos hier hineinziehen oder klicken</p>
-          <span class="upload-hint">JPG, PNG, WebP · Wird automatisch auf 1400 px optimiert</span>
-        </div>
+        <input type="file" class="upload-input" accept="image/*" multiple onchange="uploadGalleryGH(this.files)">
+        <div class="upload-drop-inner"><span class="upload-icon">📸</span><p>Fotos hochladen</p><span class="upload-hint">Wird automatisch optimiert · in GitHub-Repo gespeichert</span></div>
       </div>
       <div id="upload-preview" class="upload-preview"></div>
     </div>
-
-    <!-- Existing -->
     <div class="form-card">
-      <div class="form-card-title">Vorhandene Fotos (${S.images.length})</div>
-      ${thumbs ? `<div class="gallery-manage-grid">${thumbs}</div>` : '<p class="empty-hint">Noch keine Fotos hochgeladen</p>'}
-    </div>
-  `;
-
-  // Drag & drop
-  const drop = document.getElementById('upload-drop');
-  drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('drag-over'); });
-  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
-  drop.addEventListener('drop', e => {
-    e.preventDefault(); drop.classList.remove('drag-over');
-    handleGalleryUpload(e.dataTransfer.files);
-  });
+      <div class="form-card-title">Vorhandene Galerie-Fotos (${items.length})</div>
+      ${grid?`<div class="gallery-manage-grid">${grid}</div><div class="form-actions"><button class="btn-save" onclick="saveGalleryTitles(this)">Beschriftungen speichern</button></div>`:'<p class="empty-hint">Noch keine Fotos</p>'}
+    </div>`;
 }
 
-async function uploadLogo(input) {
-  const file = input.files[0];
-  if (!file) return;
+async function saveGalleryTitles(btn) {
+  const titles = {};
+  document.querySelectorAll('.gal-title-inp').forEach(inp => { titles[inp.dataset.fn] = inp.value.trim(); });
+  const updated = (S.gallery||[]).map(img => ({ ...img, title: titles[img.filename] ?? img.title }));
+  const o = btn.textContent; btn.textContent='Speichern…'; btn.disabled=true;
+  try { await API.put('gallery', updated); S.gallery=updated; flash('Beschriftungen gespeichert!'); }
+  catch(ex) { flash('Fehler: '+ex.message,'error'); }
+  finally { btn.textContent=o; btn.disabled=false; }
+}
+
+async function deleteGalleryItem(filename) {
+  if (!confirm(`"${filename}" aus der Galerie entfernen?`)) return;
+  S.gallery = (S.gallery||[]).filter(g => g.filename !== filename);
+  try { await API.put('gallery', S.gallery); flash('Foto entfernt.'); renderGallery(); }
+  catch(ex) { flash('Fehler: '+ex.message,'error'); }
+}
+
+// Logo + gallery uploads still use GitHub API (images live in the repo)
+const GH_REPO   = 'devkappi084-source/nazumido';
+const GH_BRANCH = 'claude/great-rubin-tXnlB';
+let _ghToken = sessionStorage.getItem('nz_gh_token') || null;
+
+async function getGHToken() {
+  if (_ghToken) return _ghToken;
+  const t = prompt('GitHub Personal Access Token für Bild-Upload:');
+  if (t) { _ghToken = t.trim(); sessionStorage.setItem('nz_gh_token', _ghToken); }
+  return _ghToken;
+}
+
+async function ghPutFile(path, base64, sha, message) {
+  const token = await getGHToken();
+  if (!token) throw new Error('Kein GitHub Token');
+  const body = { message, content: base64, branch: GH_BRANCH };
+  if (sha) body.sha = sha;
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/contents/${path}`, {
+    method: 'PUT',
+    headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) { const e = await r.json().catch(()=>{}); throw new Error(e?.message || `HTTP ${r.status}`); }
+  return r.json();
+}
+
+async function ghGetSha(path) {
+  const token = await getGHToken();
+  if (!token) return null;
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/contents/${path}?ref=${GH_BRANCH}`, {
+    headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+  });
+  if (r.status === 404) return null;
+  const d = await r.json();
+  return d.sha || null;
+}
+
+async function uploadLogoGH(input) {
+  const file = input.files[0]; if (!file) return;
   showLoading('Logo wird hochgeladen…');
   try {
-    const fr = new FileReader();
+    const sha    = await ghGetSha('images/logo.png');
+    const fr     = new FileReader();
     fr.onload = async ev => {
       try {
-        const base64 = ev.target.result.split(',')[1];
-        const res = await GH.putBinary('images/logo.png', base64, S.logoSha, 'Admin: Logo aktualisiert');
-        S.logoSha = res.content.sha;
-        hideLoading();
-        flash('Logo hochgeladen! Seite wird in ~1 Min. neu gebaut.');
-        const prev = document.getElementById('logo-prev');
-        if (prev) { prev.style.opacity = ''; prev.src = rawUrl('images/logo.png') + '?v=' + Date.now(); }
-      } catch(err) { hideLoading(); flash('Fehler: ' + err.message, 'error'); }
+        const b64 = ev.target.result.split(',')[1];
+        await ghPutFile('images/logo.png', b64, sha, 'Admin: Logo aktualisiert');
+        hideLoading(); flash('Logo hochgeladen! Seite baut neu (~1 Min.)');
+      } catch(ex) { hideLoading(); flash('Fehler: '+ex.message,'error'); }
     };
     fr.readAsDataURL(file);
-  } catch(err) {
-    hideLoading(); flash('Fehler: ' + err.message, 'error');
-  }
+  } catch(ex) { hideLoading(); flash('Fehler: '+ex.message,'error'); }
 }
 
-async function handleGalleryUpload(files) {
-  if (!files || !files.length) return;
+async function uploadGalleryGH(files) {
+  if (!files?.length) return;
   const arr = Array.from(files).filter(f => f.type.startsWith('image/'));
   if (!arr.length) return;
-
-  const preview = document.getElementById('upload-preview');
-  if (!preview) return;
-
-  // Show placeholders
-  preview.innerHTML = arr.map(f =>
-    `<div class="upload-thumb" id="uth-${safeName(f.name)}">
-      <div style="width:100%;aspect-ratio:1;background:var(--input-bg);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:1.5rem">⏳</div>
-      <span>${esc(f.name)}</span>
-    </div>`
-  ).join('');
-
-  let uploaded = 0;
+  const prev = document.getElementById('upload-preview');
+  prev.innerHTML = arr.map(f=>`<div class="upload-thumb" id="ug-${f.name}"><div style="width:100%;aspect-ratio:1;background:var(--input-bg);border-radius:5px;display:flex;align-items:center;justify-content:center">⏳</div><span>${esc(f.name)}</span></div>`).join('');
+  let done = 0;
   for (const file of arr) {
-    const fname = safeName(file.name);
-    const thumbEl = document.getElementById('uth-' + fname);
+    const fname = file.name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9.\-_]/g,'');
     try {
-      const base64 = await resizeImage(file, 1400);
-      const existSha = await GH.getFileSha(`images/gallery/${fname}`);
-      const res = await GH.putBinary(`images/gallery/${fname}`, base64, existSha,
-        `Admin: Galerie-Foto hochgeladen – ${fname}`);
-
-      // Update state
-      S.images = S.images.filter(i => i.name !== fname);
-      S.images.push({ name: fname, sha: res.content.sha });
-
-      // Update gallery.json
-      S.gallery = S.gallery || [];
-      if (!S.gallery.find(g => g.filename === fname)) S.gallery.push({ filename: fname, title: '' });
-      const gjRes = await GH.putJSON('data/gallery.json', S.gallery, S.gallerySha, 'Admin: Galerie aktualisiert');
-      S.gallerySha = gjRes.content.sha;
-
-      uploaded++;
-      if (thumbEl) thumbEl.innerHTML = `
-        <img src="${rawUrl('images/gallery/'+fname)}?v=${Date.now()}" alt="${esc(fname)}" style="border-radius:5px;width:100%;aspect-ratio:1;object-fit:cover">
-        <span style="color:#6adf7a">✓ ${esc(fname)}</span>`;
-    } catch(err) {
-      if (thumbEl) thumbEl.innerHTML = `
-        <div style="background:rgba(200,30,30,.2);width:100%;aspect-ratio:1;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#ff8888">Fehler</div>
-        <span style="color:#ff8888">${esc(fname)}</span>`;
-      flash(`Fehler bei ${fname}: ${err.message}`, 'error');
+      const sha = await ghGetSha(`images/gallery/${fname}`);
+      await new Promise((res,rej) => {
+        const fr = new FileReader(); fr.onload = async ev => {
+          try { await ghPutFile(`images/gallery/${fname}`, ev.target.result.split(',')[1], sha, `Admin: Galerie-Foto – ${fname}`); res(); }
+          catch(ex) { rej(ex); }
+        }; fr.readAsDataURL(file);
+      });
+      if (!S.gallery.find(g=>g.filename===fname)) S.gallery.push({ filename:fname, title:'' });
+      document.getElementById(`ug-${file.name}`)?.querySelector('div')?.remove();
+      document.getElementById(`ug-${file.name}`)?.insertAdjacentHTML('afterbegin', `<span style="color:#6adf7a">✓</span>`);
+      done++;
+    } catch(ex) {
+      document.getElementById(`ug-${file.name}`)?.insertAdjacentHTML('afterbegin', `<span style="color:#ff8888">✕</span>`);
+      flash(`Fehler bei ${fname}: ${ex.message}`, 'error');
     }
   }
-
-  if (uploaded > 0) {
-    flash(`${uploaded} Foto${uploaded>1?'s':''} hochgeladen! Seite wird neu gebaut.`);
-    // Refresh grid after short delay
-    setTimeout(renderGallery, 500);
-  }
-}
-
-async function deleteGalleryImage(name, sha) {
-  if (!confirm(`Foto "${name}" wirklich löschen?`)) return;
-  showLoading('Foto wird gelöscht…');
-  try {
-    await GH.deleteFile(`images/gallery/${name}`, sha, `Admin: Galerie-Foto gelöscht – ${name}`);
-    S.images  = S.images.filter(i => i.name !== name);
-    S.gallery = (S.gallery||[]).filter(g => g.filename !== name);
-    const res = await GH.putJSON('data/gallery.json', S.gallery, S.gallerySha, 'Admin: Galerie aktualisiert');
-    S.gallerySha = res.content.sha;
-    hideLoading();
-    flash('Foto gelöscht.');
-    renderGallery();
-  } catch(err) {
-    hideLoading();
-    flash('Fehler: ' + err.message, 'error');
-  }
+  if (done) { await API.put('gallery', S.gallery); flash(`${done} Foto(s) hochgeladen!`); }
 }
 
 // ══════════════════════════════════════════════════════════════
 //  SETTINGS
 // ══════════════════════════════════════════════════════════════
 function renderSettings() {
-  const c   = S.settings?.contact || {};
-  const soc = S.settings?.social  || {};
-  const g   = S.settings?.general || {};
-
+  const c = S.settings?.contact||{}, soc = S.settings?.social||{}, g = S.settings?.general||{};
   document.getElementById('page-content').innerHTML = `
     <div class="tabs">
       <button class="tab active" data-tab="contact">Kontakt</button>
       <button class="tab" data-tab="social">Social Media</button>
       <button class="tab" data-tab="general">Allgemein</button>
     </div>
-
-    <!-- Kontakt -->
-    <div class="tab-panel active" id="tab-contact">
-      <div class="form-card">
-        <div class="form-card-title">Kontaktdaten</div>
-        <div class="form-group"><label>Vereinsname (für Adresse)</label><input id="s-addr-name" value="${esc(c.address_name)}"></div>
-        <div class="form-grid-2">
-          <div class="form-group"><label>Straße &amp; Hausnummer</label><input id="s-addr-street" value="${esc(c.address_street)}"></div>
-          <div class="form-group"><label>PLZ &amp; Ort</label><input id="s-addr-city" value="${esc(c.address_city)}"></div>
-        </div>
-        <div class="form-grid-2">
-          <div class="form-group"><label>Land</label><input id="s-addr-country" value="${esc(c.address_country)}"></div>
-          <div class="form-group"><label>E-Mail-Adresse</label><input type="email" id="s-email" value="${esc(c.email)}"></div>
-        </div>
-        <div class="form-group"><label>Website</label><input id="s-website" value="${esc(c.website)}" placeholder="www.nazu-mido.at"></div>
-        <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Veröffentlichen</button></div>
-      </div>
-    </div>
-
-    <!-- Social -->
-    <div class="tab-panel" id="tab-social">
-      <div class="form-card">
-        <div class="form-card-title">Social Media Links</div>
-        <p class="form-note" style="margin-bottom:18px">Vollständige URL eingeben. Leer lassen = nicht anzeigen.</p>
-        <div class="form-group">
-          <label>Facebook</label>
-          <input id="s-facebook" value="${esc(soc.facebook==='#'?'':soc.facebook)}" placeholder="https://www.facebook.com/nazumido">
-        </div>
-        <div class="form-group">
-          <label>Instagram</label>
-          <input id="s-instagram" value="${esc(soc.instagram==='#'?'':soc.instagram)}" placeholder="https://www.instagram.com/nazumido">
-        </div>
-        <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Veröffentlichen</button></div>
-      </div>
-    </div>
-
-    <!-- Allgemein -->
-    <div class="tab-panel" id="tab-general">
-      <div class="form-card">
-        <div class="form-card-title">Allgemeine Informationen</div>
-        <div class="form-grid-3">
-          <div class="form-group"><label>Saison (z.B. "2026/2027")</label><input id="s-season" value="${esc(g.season)}"></div>
-          <div class="form-group"><label>Gegründet (Jahr)</label><input id="s-founded" value="${esc(g.founded)}"></div>
-          <div class="form-group"><label>Mitglieder (z.B. "100+")</label><input id="s-members" value="${esc(g.members)}"></div>
-        </div>
-        <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Veröffentlichen</button></div>
-      </div>
-    </div>
-  `;
+    <div class="tab-panel active" id="tab-contact"><div class="form-card"><div class="form-card-title">Kontaktdaten</div>
+      <div class="form-group"><label>Vereinsname</label><input id="s-name" value="${esc(c.address_name)}"></div>
+      <div class="form-grid-2"><div class="form-group"><label>Straße</label><input id="s-street" value="${esc(c.address_street)}"></div><div class="form-group"><label>PLZ &amp; Ort</label><input id="s-city" value="${esc(c.address_city)}"></div></div>
+      <div class="form-grid-2"><div class="form-group"><label>Land</label><input id="s-country" value="${esc(c.address_country)}"></div><div class="form-group"><label>E-Mail</label><input type="email" id="s-email" value="${esc(c.email)}"></div></div>
+      <div class="form-group"><label>Website</label><input id="s-website" value="${esc(c.website)}"></div>
+      <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Live schalten</button></div>
+    </div></div>
+    <div class="tab-panel" id="tab-social"><div class="form-card"><div class="form-card-title">Social Media</div>
+      <div class="form-group"><label>Facebook URL</label><input id="s-fb" value="${esc(soc.facebook==='#'?'':soc.facebook)}" placeholder="https://www.facebook.com/..."></div>
+      <div class="form-group"><label>Instagram URL</label><input id="s-ig" value="${esc(soc.instagram==='#'?'':soc.instagram)}" placeholder="https://www.instagram.com/..."></div>
+      <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Live schalten</button></div>
+    </div></div>
+    <div class="tab-panel" id="tab-general"><div class="form-card"><div class="form-card-title">Allgemein</div>
+      <div class="form-grid-3"><div class="form-group"><label>Saison</label><input id="s-season" value="${esc(g.season)}"></div><div class="form-group"><label>Gegründet</label><input id="s-founded" value="${esc(g.founded)}"></div><div class="form-group"><label>Mitglieder</label><input id="s-members" value="${esc(g.members)}"></div></div>
+      <div class="form-actions"><button class="btn-save" onclick="saveSettings(this)">Speichern &amp; Live schalten</button></div>
+    </div></div>`;
   initTabs();
 }
 
 async function saveSettings(btn) {
-  if (S.saving) return;
-  S.saving = true;
-  const orig = btn.textContent;
-  btn.textContent = 'Speichern…'; btn.disabled = true;
-
-  const val = id => document.getElementById(id)?.value?.trim() ?? '';
-
+  if (S.saving) return; S.saving=true;
+  const o = btn.textContent; btn.textContent='Speichern…'; btn.disabled=true;
+  const v = id => document.getElementById(id)?.value?.trim()||'';
   try {
-    const fb = val('s-facebook');
-    const ig = val('s-instagram');
-    const newSettings = {
-      contact: {
-        address_name:    val('s-addr-name'),
-        address_street:  val('s-addr-street'),
-        address_city:    val('s-addr-city'),
-        address_country: val('s-addr-country'),
-        email:           val('s-email'),
-        website:         val('s-website')
-      },
-      social: {
-        facebook:  fb || '#',
-        instagram: ig || '#'
-      },
-      general: {
-        season:  val('s-season'),
-        founded: val('s-founded'),
-        members: val('s-members')
-      }
+    const data = {
+      contact: { address_name:v('s-name'), address_street:v('s-street'), address_city:v('s-city'), address_country:v('s-country'), email:v('s-email'), website:v('s-website') },
+      social:  { facebook:v('s-fb')||'#', instagram:v('s-ig')||'#' },
+      general: { season:v('s-season'), founded:v('s-founded'), members:v('s-members') }
     };
+    await API.put('settings', data); S.settings=data;
+    flash('Einstellungen gespeichert! Sofort live.');
+  } catch(ex) { flash('Fehler: '+ex.message,'error'); }
+  finally { S.saving=false; btn.textContent=o; btn.disabled=false; }
+}
 
-    const res = await GH.putJSON('data/settings.json', newSettings, S.settingsSha, 'Admin: Einstellungen aktualisiert');
-    S.settings    = newSettings;
-    S.settingsSha = res.content.sha;
-    flash('Einstellungen gespeichert! Seite wird neu gebaut.');
-  } catch(err) {
-    flash('Fehler: ' + err.message, 'error');
-  } finally {
-    S.saving = false;
-    btn.textContent = orig; btn.disabled = false;
+// ══════════════════════════════════════════════════════════════
+//  USERS
+// ══════════════════════════════════════════════════════════════
+const PERM_LABELS = { content:'Texte', events:'Termine', gallery:'Galerie', settings:'Einstellungen', users:'Benutzer', members:'Mitglieder' };
+
+async function renderUsers() {
+  if (!can('users')) { document.getElementById('page-content').innerHTML='<p class="empty-hint" style="padding:40px;text-align:center">Keine Berechtigung</p>'; return; }
+  showLoading();
+  let users = [];
+  try { users = (await API.get('users')).users || []; } catch(ex) { flash('Fehler: '+ex.message,'error'); }
+  hideLoading();
+
+  const rows = users.map(u => `<tr>
+    <td><strong>${esc(u.name)}</strong>${u.isOwner?'<span class="badge-owner">Owner</span>':''}</td>
+    <td style="color:var(--text-muted);font-size:.85rem">${esc(u.email)}</td>
+    <td>${Object.entries(u.permissions||{}).filter(([,v])=>v).map(([k])=>`<span class="badge-type type-sonstig" style="margin:1px">${esc(PERM_LABELS[k]||k)}</span>`).join(' ')||'—'}</td>
+    <td><span class="badge-active ${u.active?'on':'off'}">${u.active?'Aktiv':'Inaktiv'}</span></td>
+    <td><div class="td-actions">
+      <button class="action-edit" onclick="editUser('${esc(u.id)}')">✏ Bearbeiten</button>
+      ${!u.isOwner?`<button class="action-del" onclick="deleteUser('${esc(u.id)}','${esc(u.name)}')">✕</button>`:''}
+    </div></td>
+  </tr>`).join('');
+
+  document.getElementById('page-content').innerHTML = `
+    <div class="page-actions"><button class="btn-add" onclick="editUser(null)">＋ Benutzer hinzufügen</button></div>
+    <div class="table-card"><table class="admin-table">
+      <thead><tr><th>Name</th><th>E-Mail</th><th>Berechtigungen</th><th>Status</th><th>Aktionen</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" class="empty-hint" style="padding:28px;text-align:center">Keine Benutzer</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+function permCheckboxes(perms) {
+  return Object.entries(PERM_LABELS).map(([k,l]) => `
+    <div class="perm-item"><input type="checkbox" id="p-${k}" ${perms?.[k]?'checked':''}>
+    <label for="p-${k}">${esc(l)}</label></div>`).join('');
+}
+
+async function editUser(id) {
+  let user = null;
+  if (id) {
+    showLoading();
+    try { const r = await API.get('users'); user = (r.users||[]).find(u=>u.id===id); } catch {}
+    hideLoading();
   }
+  openModal(`
+    <div class="modal-head"><h2>${user?'✏ Benutzer bearbeiten':'＋ Neuer Benutzer'}</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-form">
+      <div class="form-grid-2">
+        <div class="form-group"><label>Name *</label><input id="u-name" value="${esc(user?.name||'')}"></div>
+        <div class="form-group"><label>E-Mail *</label><input type="email" id="u-email" value="${esc(user?.email||'')}"></div>
+      </div>
+      <div class="form-group"><label>Passwort ${user?'(leer = unverändert)':'*'}</label><input type="password" id="u-pw" autocomplete="new-password" minlength="8"></div>
+      <div class="form-group"><label>Berechtigungen</label><div class="perm-grid">${permCheckboxes(user?.permissions)}</div></div>
+      <div class="form-group"><label class="check-label"><input type="checkbox" id="u-active" ${!user||user.active?'checked':''}> Konto aktiv</label></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Abbrechen</button>
+      <button class="btn-save" onclick="saveUser('${id||''}',this)">Speichern</button>
+    </div>`);
+}
+
+async function saveUser(id, btn) {
+  const name  = document.getElementById('u-name').value.trim();
+  const email = document.getElementById('u-email').value.trim();
+  const pw    = document.getElementById('u-pw').value;
+  if (!name||!email) { flash('Name und E-Mail erforderlich','error'); return; }
+  if (!id && !pw)    { flash('Passwort erforderlich','error'); return; }
+  const o = btn.textContent; btn.textContent='Speichern…'; btn.disabled=true;
+  const permissions = {};
+  Object.keys(PERM_LABELS).forEach(k => { permissions[k] = document.getElementById(`p-${k}`)?.checked || false; });
+  const body = { name, email, permissions, active: document.getElementById('u-active').checked };
+  if (pw) body.password = pw;
+  try {
+    if (id) await API.put('users', body, { id });
+    else    await API.post('users', body);
+    closeModal(); flash(id?'Benutzer aktualisiert!':'Benutzer erstellt!'); renderUsers();
+  } catch(ex) { flash('Fehler: '+ex.message,'error'); btn.textContent=o; btn.disabled=false; }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`Benutzer "${name}" wirklich löschen?`)) return;
+  try { await API.delete('users', { id }); flash('Benutzer gelöscht.'); renderUsers(); }
+  catch(ex) { flash('Fehler: '+ex.message,'error'); }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MEMBERS
+// ══════════════════════════════════════════════════════════════
+async function renderMembers() {
+  if (!can('members')) { document.getElementById('page-content').innerHTML='<p class="empty-hint" style="padding:40px;text-align:center">Keine Berechtigung</p>'; return; }
+  showLoading();
+  let members = [];
+  try { members = (await API.get('members')).members || []; } catch(ex) { flash('Fehler: '+ex.message,'error'); }
+  hideLoading();
+
+  const rows = members.map(m => `<tr>
+    <td>${esc(m.name)}</td>
+    <td style="color:var(--text-muted);font-size:.85rem">${esc(m.email)}</td>
+    <td><span class="badge-active ${m.active?'on':'off'}">${m.active?'Aktiv':'Inaktiv'}</span></td>
+    <td style="color:var(--text-muted);font-size:.78rem">${m.createdAt ? new Date(m.createdAt).toLocaleDateString('de-AT') : '—'}</td>
+    <td><div class="td-actions">
+      <button class="action-edit" onclick="editMember('${esc(m.id)}','${esc(m.name)}','${esc(m.email)}',${m.active})">✏ Bearbeiten</button>
+      <button class="action-del" onclick="deleteMember('${esc(m.id)}','${esc(m.name)}')">✕</button>
+    </div></td>
+  </tr>`).join('');
+
+  document.getElementById('page-content').innerHTML = `
+    <div class="page-actions"><button class="btn-add" onclick="editMember(null)">＋ Mitglied hinzufügen</button></div>
+    <div class="table-card"><table class="admin-table">
+      <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Hinzugefügt</th><th>Aktionen</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" class="empty-hint" style="padding:28px;text-align:center">Keine Mitglieder</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+function editMember(id, name='', email='', active=true) {
+  openModal(`
+    <div class="modal-head"><h2>${id?'✏ Mitglied bearbeiten':'＋ Mitglied hinzufügen'}</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-form">
+      <div class="form-grid-2">
+        <div class="form-group"><label>Name *</label><input id="m-name" value="${esc(name)}"></div>
+        <div class="form-group"><label>E-Mail *</label><input type="email" id="m-email" value="${esc(email)}"></div>
+      </div>
+      <div class="form-group"><label>Passwort ${id?'(leer = unverändert)':'*'} (min. 6 Zeichen)</label><input type="password" id="m-pw" autocomplete="new-password" minlength="6"></div>
+      <div class="form-group"><label class="check-label"><input type="checkbox" id="m-active" ${active?'checked':''}> Konto aktiv (kann sich einloggen)</label></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Abbrechen</button>
+      <button class="btn-save" onclick="saveMember('${id||''}',this)">Speichern</button>
+    </div>`);
+}
+
+async function saveMember(id, btn) {
+  const name  = document.getElementById('m-name').value.trim();
+  const email = document.getElementById('m-email').value.trim();
+  const pw    = document.getElementById('m-pw').value;
+  if (!name||!email) { flash('Name und E-Mail erforderlich','error'); return; }
+  if (!id && !pw)    { flash('Passwort erforderlich','error'); return; }
+  const o = btn.textContent; btn.textContent='Speichern…'; btn.disabled=true;
+  const body = { name, email, active: document.getElementById('m-active').checked };
+  if (pw) body.password = pw;
+  try {
+    if (id) await API.put('members', body, { id });
+    else    await API.post('members', body);
+    closeModal(); flash(id?'Mitglied aktualisiert!':'Mitglied erstellt!'); renderMembers();
+  } catch(ex) { flash('Fehler: '+ex.message,'error'); btn.textContent=o; btn.disabled=false; }
+}
+
+async function deleteMember(id, name) {
+  if (!confirm(`Mitglied "${name}" wirklich löschen? Fotos bleiben erhalten.`)) return;
+  try { await API.delete('members', { id }); flash('Mitglied gelöscht.'); renderMembers(); }
+  catch(ex) { flash('Fehler: '+ex.message,'error'); }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MY ACCOUNT
+// ══════════════════════════════════════════════════════════════
+function renderMyAccount() {
+  document.getElementById('page-content').innerHTML = `
+    <div class="form-card" style="max-width:500px">
+      <div class="form-card-title">Passwort ändern</div>
+      <div class="form-group"><label>Aktuelles Passwort</label><input type="password" id="pw-current"></div>
+      <div class="form-group"><label>Neues Passwort (min. 8 Zeichen)</label><input type="password" id="pw-new" minlength="8"></div>
+      <div class="form-group"><label>Neues Passwort wiederholen</label><input type="password" id="pw-confirm"></div>
+      <div class="form-actions"><button class="btn-save" onclick="changeAdminPassword(this)">Passwort ändern</button></div>
+    </div>`;
+}
+
+async function changeAdminPassword(btn) {
+  const cur  = document.getElementById('pw-current').value;
+  const nw   = document.getElementById('pw-new').value;
+  const conf = document.getElementById('pw-confirm').value;
+  if (!cur||!nw) { flash('Alle Felder erforderlich','error'); return; }
+  if (nw !== conf) { flash('Passwörter stimmen nicht überein','error'); return; }
+  if (nw.length < 8) { flash('Mind. 8 Zeichen','error'); return; }
+  const o = btn.textContent; btn.textContent='Ändern…'; btn.disabled=true;
+  try {
+    await API.put('users', { password: nw, _currentPassword: cur }, { id: S.user.id });
+    flash('Passwort geändert!'); document.getElementById('pw-current').value=''; document.getElementById('pw-new').value=''; document.getElementById('pw-confirm').value='';
+  } catch(ex) { flash('Fehler: '+ex.message,'error'); }
+  finally { btn.textContent=o; btn.disabled=false; }
 }
 
 // ══════════════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
-  // Burger menu
-  document.getElementById('burger-btn').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
-  });
-  document.getElementById('sidebar-close').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.remove('open');
-  });
+document.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('burger-btn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+  document.getElementById('sidebar-close').addEventListener('click', () => document.getElementById('sidebar').classList.remove('open'));
+  document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target.id==='modal-overlay') closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
 
-  // Close modal on overlay click
-  document.getElementById('modal-overlay').addEventListener('click', e => {
-    if (e.target.id === 'modal-overlay') closeModal();
-  });
+  initLoginForm();
+  initSetupForm();
 
-  // Escape key closes modal
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeModal();
-  });
+  showLoading('Überprüfe Anmeldung…');
+  const loggedIn = await checkSession();
+  hideLoading();
 
-  // Check for existing session
-  const saved = sessionStorage.getItem('gh_token');
-  if (saved) {
-    S.token = saved;
+  if (loggedIn) {
     bootApp();
   } else {
-    initLogin();
+    // Check if setup is needed
+    const needsSetup = await checkSetupNeeded();
+    if (needsSetup) {
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('setup-screen').style.display = 'flex';
+    }
   }
 });
