@@ -1,5 +1,10 @@
 /* GET /api/config — public endpoint, returns KV overrides */
 export async function onRequestGet({ env }) {
+  if (!env.KV) {
+    return new Response(JSON.stringify({ content: null, events: null, settings: null, gallery: null }), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
   const [content, events, settings, gallery] = await Promise.all([
     env.KV.get('config:content',  'json').catch(() => null),
     env.KV.get('config:events',   'json').catch(() => null),
