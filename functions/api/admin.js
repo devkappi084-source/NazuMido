@@ -11,6 +11,7 @@ const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method === 'OPTIONS') return cors();
+  if (!env.KV) return err('KV-Datenbank nicht eingerichtet. Bitte KV-Namespace in Cloudflare Pages einrichten.', 503);
 
   const url    = new URL(request.url);
   const action = url.searchParams.get('action');
