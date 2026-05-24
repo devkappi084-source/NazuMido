@@ -1,5 +1,5 @@
 /* ============================================================
-   NazuMido – Dynamic Content Loader
+   NazuMido – Dynamic Content Loader (Redesign)
    1. Fetches /api/config for live KV overrides (instant updates)
    2. Falls back to data/*.json static files when KV is empty
    ============================================================ */
@@ -7,25 +7,19 @@
 const MONTH_SHORT = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const MONTH_LONG  = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 
-const TYPE_LABEL = {
-    highlight: 'Highlight', ball: 'Ball', familie: 'Familie',
-    abschluss: 'Finale',    sonstig: 'Event'
-};
-
 function setText(id, text) {
     const el = document.getElementById(id);
-    if (el && text) el.textContent = text;
+    if (el && text != null) el.textContent = text;
 }
 function setHTML(id, html) {
     const el = document.getElementById(id);
-    if (el && html) el.innerHTML = html;
+    if (el && html != null) el.innerHTML = html;
 }
 function setHref(id, href) {
     const el = document.getElementById(id);
     if (el && href && href !== '#') el.href = href;
 }
-function show(id)    { const el = document.getElementById(id); if (el) el.style.display = ''; }
-function hide(id)    { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+
 function svgFacebook() {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`;
 }
@@ -50,103 +44,113 @@ async function fetchJSON(path) {
     } catch { return null; }
 }
 
+/* ============================================================
+   CONTENT (hero, about, groups text)
+   ============================================================ */
 async function loadContent() {
     const overrides = await kv();
     const c = overrides.content || await fetchJSON('data/content.json');
     if (!c) return;
 
     if (c.hero) {
-        setText('hero-pretext',    c.hero.pretext);
-        setText('hero-subtitle',   c.hero.subtitle);
-        setText('hero-location',   c.hero.location);
-        setText('hero-motto',      c.hero.motto);
-        setText('nav-title',       c.hero.title);
-        setText('nav-subtitle',    c.hero.subtitle);
-        setText('footer-title',    c.hero.title);
-        setText('footer-subtitle', c.hero.subtitle);
+        // Update hero eyebrow/sub text if available in KV
+        if (c.hero.pretext)    setText('hero-eyebrow', c.hero.pretext);
+        if (c.hero.subtitle)   setText('hero-sub',     c.hero.subtitle);
+        if (c.hero.title) {
+            setText('footer-title', c.hero.title);
+        }
+        if (c.hero.subtitle)   setText('footer-subtitle', c.hero.subtitle);
     }
     if (c.about) {
-        setText('about-eyebrow',   c.about.eyebrow);
-        setHTML('about-lead',      c.about.lead);
-        setText('about-text1',     c.about.text1);
-        setHTML('about-text2',     c.about.text2);
-        setText('stat-years',      c.about.stat_years);
-        setText('stat-members',    c.about.stat_members);
-        setText('card1-title',     c.about.card1_title);
-        setText('card1-text',      c.about.card1_text);
-        setText('card2-title',     c.about.card2_title);
-        setText('card2-text',      c.about.card2_text);
-        setText('card3-title',     c.about.card3_title);
-        setText('card3-text',      c.about.card3_text);
+        if (c.about.lead)        setHTML('about-lead',   c.about.lead);
+        if (c.about.text1)       setText('about-text1',  c.about.text1);
+        if (c.about.text2)       setHTML('about-text2',  c.about.text2);
+        if (c.about.stat_years)  setText('stat-years',   c.about.stat_years);
+        if (c.about.stat_members) setText('stat-members', c.about.stat_members);
     }
     if (c.groups) {
-        setText('garde-desc',    c.groups.garde_desc);
-        setText('elferrat-desc', c.groups.elferrat_desc);
-        setText('prinzen-desc',  c.groups.prinzen_desc);
-        setText('hexen-desc',    c.groups.hexen_desc);
+        if (c.groups.garde_desc)   setText('garde-desc',   c.groups.garde_desc);
+        if (c.groups.musikzug_desc) setText('musikzug-desc', c.groups.musikzug_desc);
+        // Support both elferrat_desc and vorsitz_desc
+        const vd = c.groups.vorsitz_desc || c.groups.elferrat_desc;
+        if (vd) setText('vorsitz-desc', vd);
     }
 }
 
+/* ============================================================
+   SETTINGS (contact, social, general)
+   ============================================================ */
 async function loadSettings() {
     const overrides = await kv();
     const s = overrides.settings || await fetchJSON('data/settings.json');
     if (!s) return;
 
     if (s.contact) {
+        // Build address string
         const parts = [
             s.contact.address_name,
             s.contact.address_street,
             s.contact.address_city,
             s.contact.address_country
         ].filter(Boolean);
-        setHTML('contact-address', parts.join('<br>'));
+        if (parts.length) setHTML('contact-address', parts.join(', '));
 
         if (s.contact.email) {
-            const emailEl = document.getElementById('contact-email-link');
-            if (emailEl) { emailEl.href = 'mailto:' + s.contact.email; emailEl.textContent = s.contact.email; }
-            const formEmail = document.getElementById('form-email');
-            if (formEmail) { formEmail.href = 'mailto:' + s.contact.email; formEmail.textContent = s.contact.email; }
-            const mitglied = document.getElementById('mitglied-link');
-            if (mitglied) mitglied.href = 'mailto:' + s.contact.email + '?subject=Mitgliedschaft bei NazuMido';
-            const gallEmail = document.getElementById('gallery-email-link');
-            if (gallEmail) gallEmail.href = 'mailto:' + s.contact.email + '?subject=Fotos NazuMido';
-            const footerEmail = document.getElementById('footer-email');
-            if (footerEmail) { footerEmail.href = 'mailto:' + s.contact.email; footerEmail.textContent = s.contact.email; }
+            const e = s.contact.email;
+            // Update all email links
+            ['contact-email-link', 'footer-email', 'gallery-email-link'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    if (id === 'gallery-email-link') {
+                        el.href = 'mailto:' + e + '?subject=Fotos NazuMido';
+                    } else {
+                        el.href = 'mailto:' + e;
+                        if (id === 'contact-email-link') el.textContent = e;
+                        if (id === 'footer-email')       el.textContent = e;
+                    }
+                }
+            });
         }
+
         if (s.contact.address_city) {
             setText('footer-address-city', s.contact.address_city);
-            setText('footer-city', s.contact.address_city + ' · Oberösterreich');
         }
     }
 
     if (s.social) {
-        let hasSocial = false;
-        const fbLink = document.getElementById('fb-link');
-        const igLink = document.getElementById('ig-link');
+        const socialContainers = ['footer-social', 'footer-social-links'];
+        const links = [];
         if (s.social.facebook && s.social.facebook !== '#') {
-            if (fbLink) { fbLink.href = s.social.facebook; fbLink.style.display = ''; }
-            hasSocial = true;
-            const footSocial = document.getElementById('footer-social');
-            if (footSocial) footSocial.innerHTML += `<a href="${s.social.facebook}" class="footer-social-btn" target="_blank" rel="noopener" aria-label="Facebook">${svgFacebook()}</a>`;
+            links.push(`<a href="${s.social.facebook}" target="_blank" rel="noopener" aria-label="Facebook">${svgFacebook()}</a>`);
         }
         if (s.social.instagram && s.social.instagram !== '#') {
-            if (igLink) { igLink.href = s.social.instagram; igLink.style.display = ''; }
-            hasSocial = true;
-            const footSocial = document.getElementById('footer-social');
-            if (footSocial) footSocial.innerHTML += `<a href="${s.social.instagram}" class="footer-social-btn" target="_blank" rel="noopener" aria-label="Instagram">${svgInstagram()}</a>`;
+            links.push(`<a href="${s.social.instagram}" target="_blank" rel="noopener" aria-label="Instagram">${svgInstagram()}</a>`);
         }
-        if (hasSocial) hide('no-social');
+        if (links.length) {
+            socialContainers.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = links.join('');
+            });
+        }
     }
 
     if (s.general) {
         if (s.general.season) {
-            setText('season-label',  'Saison ' + s.general.season);
-            setText('btn-termine',   'Termine ' + s.general.season);
-            setText('footer-season', 'Saison ' + s.general.season);
+            setText('footer-season',  'Saison ' + s.general.season);
+            setText('events-eyebrow', 'Kalender · ' + s.general.season);
+            setText('people-eyebrow', 'Vorstand · Saison ' + s.general.season);
+            setText('footer-copy',    '© ' + new Date().getFullYear() + ' NazuMido – Narrenzunft der schwarzen Grafen | Kirchdorf an der Krems');
+        }
+        if (s.general.members) {
+            setText('hero-members', s.general.members + ' Närrinnen & Narren');
+            setText('stat-members', s.general.members);
         }
     }
 }
 
+/* ============================================================
+   EVENTS (render into #events-list in the new design style)
+   ============================================================ */
 async function loadEvents() {
     const overrides = await kv();
     const events    = overrides.events || await fetchJSON('data/events.json');
@@ -154,45 +158,78 @@ async function loadEvents() {
 
     events.sort((a, b) => a.date.localeCompare(b.date));
 
-    let featured = events.find(e => e.featured) || events[0];
-    let others   = events.filter(e => e !== featured).slice(0, 4);
+    // Filter to future/upcoming events (up to 6)
+    const now     = new Date().toISOString().slice(0, 10);
+    const upcoming = events.filter(e => e.date >= now).slice(0, 6);
+    const toShow   = upcoming.length ? upcoming : events.slice(0, 6);
 
-    const d       = new Date(featured.date);
-    const featEl  = document.querySelector('.event-featured');
-    if (featEl) {
-        featEl.querySelector('.efd-day').textContent   = String(d.getDate()).padStart(2,'0');
-        featEl.querySelector('.efd-month').textContent = MONTH_LONG[d.getMonth()];
-        featEl.querySelector('.efd-year').textContent  = d.getFullYear();
-        const body = featEl.querySelector('.event-featured-body');
-        body.querySelector('h3').textContent = featured.title;
-        body.querySelector('p').textContent  = featured.description || '';
-        const meta = body.querySelector('.event-meta');
-        meta.innerHTML = '';
-        if (featured.location) meta.innerHTML += `<span class="event-meta-item">📍 ${featured.location}</span>`;
-        if (featured.time)     meta.innerHTML += `<span class="event-meta-item">🕐 ${featured.time}</span>`;
+    // Update hero "next event" meta
+    if (toShow.length) {
+        const first = toShow[0];
+        const fd    = new Date(first.date);
+        setText('hero-next-event', first.title);
+        setText('hero-season', '11.11.2026 — Frühjahr 2027');
     }
 
     const listEl = document.getElementById('events-list');
-    if (listEl && others.length) {
-        listEl.innerHTML = others.map((e, i) => {
-            const ed   = new Date(e.date);
-            const type = e.type || 'sonstig';
-            return `
-            <div class="event-row reveal-right" style="transition-delay:${i*0.1}s">
-                <div class="event-row-date">
-                    <span class="erd-month">${MONTH_SHORT[ed.getMonth()]}</span>
-                    <span class="erd-year">'${String(ed.getFullYear()).slice(2)}</span>
-                </div>
-                <div class="event-row-content">
-                    <h4>${e.title}</h4>
-                    <p>${e.description || ''}</p>
-                </div>
-                <span class="event-type ${type}">${TYPE_LABEL[type] || 'Event'}</span>
-            </div>`;
-        }).join('');
+    if (!listEl || !toShow.length) return;
+
+    const arrowSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
+
+    listEl.innerHTML = toShow.map((e, i) => {
+        const ed  = new Date(e.date);
+        const day = ed.getDate();
+        const mon = MONTH_SHORT[ed.getMonth()];
+        const eventId = e.id || ('ev_' + i);
+
+        // Store event data for modal
+        if (window._eventData) {
+            window._eventData[eventId] = {
+                title:       e.title,
+                kind:        (e.type || 'Event'),
+                description: e.description || '',
+                day:         day,
+                month:       mon,
+                where:       e.location || 'Kirchdorf an der Krems',
+                time:        e.time || ''
+            };
+        }
+
+        return `
+        <div class="event-row reveal-up" style="transition-delay:${i * 0.08}s" data-event-id="${eventId}">
+          <div class="event-date">
+            <span class="d">${day}</span>
+            <span class="m">${mon}</span>
+          </div>
+          <div class="event-title">
+            <h3>${e.title}</h3>
+            <span class="kind">${e.type || 'Event'} · ${ed.getFullYear()}</span>
+          </div>
+          <div class="event-desc">${e.description || ''}</div>
+          <div class="event-where">
+            ${e.time ? `<span class="time">${e.time}</span>` : '<span class="time">—</span>'}
+            ${e.location || 'Kirchdorf an der Krems'}
+          </div>
+          <div class="event-arrow" aria-hidden>${arrowSvg}</div>
+        </div>`;
+    }).join('');
+
+    // Re-wire click handlers after DOM update
+    if (typeof window.wireEventRows === 'function') {
+        window.wireEventRows();
     }
+
+    // Re-observe reveal elements
+    listEl.querySelectorAll('.reveal-up').forEach(el => {
+        if (window.revealObserver && !el.classList.contains('in-view')) {
+            window.revealObserver.observe(el);
+        }
+    });
 }
 
+/* ============================================================
+   GALLERY (KV-driven photo grid)
+   ============================================================ */
 async function loadGallery() {
     const overrides = await kv();
     const images    = overrides.gallery || await fetchJSON('data/gallery.json');
@@ -201,21 +238,35 @@ async function loadGallery() {
     const grid = document.getElementById('gallery-grid');
     if (!grid) return;
 
-    grid.innerHTML = images.slice(0, 9).map((img, i) => {
-        const isWide = i === 0 || i === 5;
-        return `
-        <div class="gallery-item ${isWide ? 'gallery-wide' : ''} reveal-up" style="transition-delay:${i*0.05}s">
-            <img src="images/gallery/${img.filename}" alt="${img.title || 'NazuMido Foto'}" class="gallery-real-img" loading="lazy">
-            <div class="gallery-overlay">
-                <span class="gallery-zoom">🔍</span>
-                ${img.title ? `<span class="gallery-label">${img.title}</span>` : ''}
-            </div>
+    grid.innerHTML = images.slice(0, 5).map((img, i) => {
+        const isBig = i === 0;
+        const src   = 'images/gallery/' + img.filename;
+        const alt   = img.title || 'NazuMido Foto';
+        return `<div class="${isBig ? 'big' : ''}">
+            <img src="${src}" alt="${alt}" loading="lazy"
+                 onerror="this.parentElement.innerHTML='<div class=placeholder>${alt}</div>'">
         </div>`;
     }).join('');
+
+    // Re-init lightbox after gallery content update
+    if (typeof window.initGallery === 'function') {
+        window.initGallery();
+    }
 }
 
-Promise.all([loadContent(), loadSettings(), loadEvents(), loadGallery()]).then(() => {
-    document.querySelectorAll('.reveal-right, .reveal-up, .reveal-left').forEach(el => {
-        if (!el.classList.contains('in-view')) revealObserver?.observe(el);
+/* ============================================================
+   Bootstrap
+   ============================================================ */
+Promise.all([
+    loadContent(),
+    loadSettings(),
+    loadEvents(),
+    loadGallery()
+]).then(() => {
+    // Observe any dynamically added reveal elements
+    document.querySelectorAll('.reveal-up, .reveal-left, .reveal-right').forEach(el => {
+        if (window.revealObserver && !el.classList.contains('in-view')) {
+            window.revealObserver.observe(el);
+        }
     });
 });
