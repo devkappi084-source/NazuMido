@@ -169,19 +169,25 @@ function Welcome() {
           <div className="welcome-text">
             <span className="eyebrow">Willkommen</span>
             <h2 style={{ marginTop: 16 }}>
-              Drei Farben,<br/>ein <span className="it">Herzschlag.</span>
+              Die Narrenzunft der<br/><span className="it">Schwarzen Grafen.</span>
             </h2>
             <p style={{ marginTop: 22 }}>
-              Rot wie das Lachen unserer Garde, weiß wie der frische
-              Februarschnee am Hauptplatz, grün wie der Tannenwald rundum:
-              In diesen Farben tanzen, singen und feiern wir seit 1962.
+              Die NAZU-MIDO ist seit 1996 ein eingetragener Verein, der sich
+              bemüht, das Brauchtum im und um den Fasching in Micheldorf zu pflegen.
             </p>
             <p>
-              Wir sind ein Verein aus Freundinnen und Freunden, die im Winter
-              das Dorf auf den Kopf stellen — und das ganze Jahr über
-              zusammenstehen. Komm vorbei. Schau zu. Mach mit.
+              Unser Name leitet sich von den alten Sensenschmieden ab — diese wurden
+              als schwarze Grafen bezeichnet. In unserem Wappen finden sich die Farben
+              von Micheldorf und die sogenannte Feinsonne, ein Zeichen, das von den
+              ansässigen Schmieden verwendet wurde.
             </p>
-            <div className="signature">— Markus Reiter, Präsident</div>
+            <p>
+              Offizielle Botschafter für die 5. Jahreszeit sind Präsident Johann Bloderer
+              und Vizepräsidentin Tamara Schubert. Musikalisch werden wir von unserem
+              Trommler- und Fanfarenzug vertreten, diverse Veranstaltungen werden durch
+              Aufführungen unserer Tanzgruppe aufgewertet.
+            </p>
+            <div className="signature">— Johann Bloderer, Präsident</div>
           </div>
           <div className="welcome-stats">
             <div className="welcome-stat">
@@ -403,6 +409,7 @@ function PeopleBlock() {
                 <div className="role">{p.role}</div>
               </div>
               <p className="bio">{p.bio}</p>
+              {p.phone && <div className="contact">{p.phone}</div>}
               <div className="contact">{p.contact}</div>
             </div>
           ))}
@@ -440,9 +447,10 @@ function NewsletterBlock() {
               Termine, Rückblicke, Anekdoten. Kein Spam, nur Schalk.
             </p>
             <div style={{ marginTop: 36, fontSize: 14, color: 'rgba(255,255,255,0.78)' }}>
-              <strong style={{ color: 'white' }}>Vereinslokal:</strong> Gasthof Hofer, Hauptplatz 4, 4563 Micheldorf<br/>
-              <strong style={{ color: 'white' }}>Tel:</strong> 07582 / 81 12 &nbsp;·&nbsp;
-              <strong style={{ color: 'white' }}>Mail:</strong> office@nazumido.at
+              <strong style={{ color: 'white' }}>Adresse:</strong> Hehenberg 163, 4540 Bad Hall<br/>
+              <strong style={{ color: 'white' }}>Mail:</strong> Nazu.Mido@gmx.at &nbsp;·&nbsp;
+              <strong style={{ color: 'white' }}>Web:</strong>{' '}
+              <a href="https://www.nazu-mido.at" style={{ color: 'rgba(255,255,255,0.78)' }} target="_blank" rel="noopener noreferrer">www.nazu-mido.at</a>
             </div>
           </div>
 
@@ -552,10 +560,10 @@ function Footer({ navigate }) {
           <div>
             <h4>Kontakt</h4>
             <ul>
-              <li>Hauptplatz 4</li>
-              <li>4563 Micheldorf</li>
-              <li>office@nazumido.at</li>
-              <li>07582 / 81 12</li>
+              <li>Hehenberg 163</li>
+              <li>4540 Bad Hall</li>
+              <li>Nazu.Mido@gmx.at</li>
+              <li><a href="https://www.nazu-mido.at" style={{ color: 'inherit' }} target="_blank" rel="noopener noreferrer">www.nazu-mido.at</a></li>
             </ul>
           </div>
         </div>

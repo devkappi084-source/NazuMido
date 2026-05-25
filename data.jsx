@@ -152,8 +152,8 @@ const GROUPS = [
 ];
 
 const PEOPLE = [
-  { id: 'p1', initial: 'M', name: 'Markus Reiter', role: 'Präsident', group: 'Vorsitz', dotColor: 'red', bio: 'Im Verein seit 2002. Bricht jeden Eröffnungsspruch mit Bravour.', contact: 'praesident@nazumido.at' },
-  { id: 'p2', initial: 'A', name: 'Anna Berger', role: 'Vizepräsidentin', group: 'Vorsitz', dotColor: 'green', bio: 'Hält die Fäden im Hintergrund zusammen — und alles im Zeitplan.', contact: 'vize@nazumido.at' },
+  { id: 'p1', initial: 'B', name: 'Johann Bloderer', role: 'Präsident', group: 'Vorsitz', dotColor: 'red', bio: 'Offizieller Botschafter für die 5. Jahreszeit und Präsident des Vereins.', contact: 'praesident@nazu-mido.at', phone: '+43 664 9233429' },
+  { id: 'p2', initial: 'T', name: 'Tamara Schubert', role: 'Vizepräsidentin', group: 'Vorsitz', dotColor: 'green', bio: 'Offizielle Botschafterin für die 5. Jahreszeit und Vizepräsidentin des Vereins.', contact: 'Nazu.Mido@gmx.at' },
   { id: 'p3', initial: 'K', name: 'Karin Schober', role: 'Trainerin Garde', group: 'Garde', dotColor: 'red', bio: 'Choreografin, Motivatorin, Tanzpädagogin. Erfolg sei "Disziplin mit Glitzer".', contact: 'garde@nazumido.at' },
   { id: 'p4', initial: 'F', name: 'Franz Huber', role: 'Kapellmeister', group: 'Musikzug', dotColor: 'gold', bio: 'Seit 18 Jahren am Taktstock. Schiefer als seine Trompeten ist nur sein Humor.', contact: 'musik@nazumido.at' },
   { id: 'p5', initial: 'T', name: 'Tom Weidinger', role: 'Kassier', group: 'Vorsitz', dotColor: 'green', bio: 'Zählt Krapfen, Mitgliedsbeiträge und Bierdeckel mit gleicher Akribie.', contact: 'kasse@nazumido.at' },
