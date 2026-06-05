@@ -5,7 +5,7 @@
     try {
       const raw = localStorage.getItem('nzadm_' + k);
       if (raw) window[k] = JSON.parse(raw);
-    } catch {}
+    } catch(e) {}
   });
   if (localStorage.getItem('nzadm_SPONSORS_TIERS')) {
     window.SPONSORS = window.SPONSORS_TIERS.flatMap(t => t.sponsors.map(s => s.name));

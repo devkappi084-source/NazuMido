@@ -20,8 +20,13 @@ function saveData(key, data) {
 function loadData(key) {
   try {
     const r = localStorage.getItem(PFX + key);
-    return r ? JSON.parse(r) : JSON.parse(JSON.stringify(window[key]));
-  } catch { return JSON.parse(JSON.stringify(window[key])); }
+    if (r) return JSON.parse(r);
+  } catch(e) {}
+  try {
+    return JSON.parse(JSON.stringify(window[key]));
+  } catch(e) {
+    return window[key];
+  }
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
