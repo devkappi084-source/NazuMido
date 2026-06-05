@@ -9,13 +9,7 @@ function TopBar({ route, navigate, user, onLogout }) {
     { id: 'vorsitz', label: 'Vorsitz' },
     { id: 'sponsoren', label: 'Sponsoren' },
   ];
-  const strip = [
-    'Session 2026 · Helau & Narri!',
-    'Großer Faschingsumzug 14. Februar',
-    'Prinzenball — Tickets ab sofort',
-    'Mini-Garde sucht Nachwuchs',
-    'Musikzug holt Bronze',
-  ];
+  const strip = SITE_CONFIG.topbarStrip;
   const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <header className="topbar">
@@ -132,15 +126,15 @@ function Hero({ navigate }) {
             <dl className="hero-meta">
               <div>
                 <dt>Saison</dt>
-                <dd>11.11.2025 — 17.02.2026</dd>
+                <dd>{SITE_CONFIG.season}</dd>
               </div>
               <div>
                 <dt>Mitglieder</dt>
-                <dd>184 Närrinnen & Narren</dd>
+                <dd>{SITE_CONFIG.memberCount} Närrinnen & Narren</dd>
               </div>
               <div>
                 <dt>Nächstes Event</dt>
-                <dd>Umzug — 14. Februar</dd>
+                <dd>{SITE_CONFIG.heroNextEvent}</dd>
               </div>
             </dl>
           </div>
@@ -181,23 +175,23 @@ function Welcome() {
               das Dorf auf den Kopf stellen — und das ganze Jahr über
               zusammenstehen. Komm vorbei. Schau zu. Mach mit.
             </p>
-            <div className="signature">— Markus Reiter, Präsident</div>
+            <div className="signature">— {SITE_CONFIG.presidentName}, Präsident</div>
           </div>
           <div className="welcome-stats">
             <div className="welcome-stat">
-              <span className="n"><span className="accent">64</span></span>
+              <span className="n"><span className="accent">{SITE_CONFIG.welcomeYears}</span></span>
               <span className="l">Jahre Tradition</span>
             </div>
             <div className="welcome-stat">
-              <span className="n">184</span>
+              <span className="n">{SITE_CONFIG.welcomeMembers}</span>
               <span className="l">Mitglieder</span>
             </div>
             <div className="welcome-stat">
-              <span className="n"><span className="accent-g">3</span></span>
+              <span className="n"><span className="accent-g">{SITE_CONFIG.welcomeGroups}</span></span>
               <span className="l">Aktive Gruppen</span>
             </div>
             <div className="welcome-stat">
-              <span className="n">12</span>
+              <span className="n">{SITE_CONFIG.welcomeEvents}</span>
               <span className="l">Events pro Jahr</span>
             </div>
           </div>
@@ -440,9 +434,9 @@ function NewsletterBlock() {
               Termine, Rückblicke, Anekdoten. Kein Spam, nur Schalk.
             </p>
             <div style={{ marginTop: 36, fontSize: 14, color: 'rgba(255,255,255,0.78)' }}>
-              <strong style={{ color: 'white' }}>Vereinslokal:</strong> Gasthof Hofer, Hauptplatz 4, 4563 Micheldorf<br/>
-              <strong style={{ color: 'white' }}>Tel:</strong> 07582 / 81 12 &nbsp;·&nbsp;
-              <strong style={{ color: 'white' }}>Mail:</strong> office@nazumido.at
+              <strong style={{ color: 'white' }}>Vereinslokal:</strong> {SITE_CONFIG.address}, {SITE_CONFIG.city}<br/>
+              <strong style={{ color: 'white' }}>Tel:</strong> {SITE_CONFIG.phone} &nbsp;·&nbsp;
+              <strong style={{ color: 'white' }}>Mail:</strong> {SITE_CONFIG.email}
             </div>
           </div>
 
@@ -552,10 +546,10 @@ function Footer({ navigate }) {
           <div>
             <h4>Kontakt</h4>
             <ul>
-              <li>Hauptplatz 4</li>
-              <li>4563 Micheldorf</li>
-              <li>office@nazumido.at</li>
-              <li>07582 / 81 12</li>
+              <li>{SITE_CONFIG.address}</li>
+              <li>{SITE_CONFIG.city}</li>
+              <li>{SITE_CONFIG.email}</li>
+              <li>{SITE_CONFIG.phone}</li>
             </ul>
           </div>
         </div>

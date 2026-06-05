@@ -1,3 +1,17 @@
+// Apply any admin overrides saved in localStorage before first render
+(function applyAdminOverrides() {
+  const keys = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','INTERNAL','SITE_CONFIG'];
+  keys.forEach(k => {
+    try {
+      const raw = localStorage.getItem('nzadm_' + k);
+      if (raw) window[k] = JSON.parse(raw);
+    } catch {}
+  });
+  if (localStorage.getItem('nzadm_SPONSORS_TIERS')) {
+    window.SPONSORS = window.SPONSORS_TIERS.flatMap(t => t.sponsors.map(s => s.name));
+  }
+})();
+
 const { useState: useStateApp, useEffect: useEffectApp } = React;
 
 function App() {
@@ -44,6 +58,10 @@ function App() {
     }
     navigate(id);
   };
+
+  if (route === 'admin') {
+    return <AdminPage navigate={handleNav} />;
+  }
 
   return (
     <>

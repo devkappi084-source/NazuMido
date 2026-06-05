@@ -326,7 +326,29 @@ const INTERNAL = {
   ],
 };
 
+const SITE_CONFIG = {
+  season:        '11.11.2025 — 17.02.2026',
+  memberCount:   '184',
+  heroNextEvent: 'Umzug — 14. Februar',
+  welcomeYears:  '64',
+  welcomeMembers:'184',
+  welcomeGroups: '3',
+  welcomeEvents: '12',
+  presidentName: 'Markus Reiter',
+  address:       'Hauptplatz 4',
+  city:          '4563 Micheldorf',
+  phone:         '07582 / 81 12',
+  email:         'office@nazumido.at',
+  topbarStrip: [
+    'Session 2026 · Helau & Narri!',
+    'Großer Faschingsumzug 14. Februar',
+    'Prinzenball — Tickets ab sofort',
+    'Mini-Garde sucht Nachwuchs',
+    'Musikzug holt Bronze',
+  ],
+};
+
 Object.assign(window, {
   NEWS, EVENTS, GROUPS, PEOPLE, TAGS, SPONSORS, SPONSORS_TIERS,
-  GARDE, MUSIKZUG, VORSITZ, PHOTOS, DEMO_USERS, INTERNAL,
+  GARDE, MUSIKZUG, VORSITZ, PHOTOS, DEMO_USERS, INTERNAL, SITE_CONFIG,
 });
