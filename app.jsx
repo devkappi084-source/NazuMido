@@ -60,7 +60,14 @@ function App() {
   };
 
   if (route === 'admin') {
-    return <AdminPage navigate={handleNav} />;
+    if (typeof AdminPage === 'undefined' || typeof AdminErrorBoundary === 'undefined') {
+      return <div style={{padding:40,fontFamily:'var(--sans,sans-serif)'}}>Admin-Panel lädt nicht — bitte Seite neu laden (<strong>Strg+Shift+R</strong>).</div>;
+    }
+    return (
+      <AdminErrorBoundary>
+        <AdminPage navigate={handleNav} />
+      </AdminErrorBoundary>
+    );
   }
 
   return (

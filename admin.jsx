@@ -929,4 +929,32 @@ function AdminPage({ navigate }) {
   );
 }
 
-Object.assign(window, { AdminPage });
+class AdminErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{padding:40,fontFamily:'var(--sans,sans-serif)',maxWidth:700,margin:'80px auto'}}>
+          <h2 style={{color:'#c0392b',marginBottom:12}}>Admin-Panel Fehler</h2>
+          <p style={{marginBottom:16}}>Das Admin-Panel konnte nicht geladen werden. Bitte Seite neu laden (<strong>Strg+Shift+R</strong>).</p>
+          <pre style={{background:'#f8f0f0',border:'1px solid #f5c6cb',borderRadius:8,padding:16,fontSize:13,overflowX:'auto',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+            {this.state.err && (this.state.err.stack || this.state.err.message || String(this.state.err))}
+          </pre>
+          <button onClick={() => this.setState({ err: null })}
+            style={{marginTop:16,padding:'8px 20px',background:'#c0392b',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontFamily:'var(--sans,sans-serif)'}}>
+            Neu versuchen
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+Object.assign(window, { AdminPage, AdminErrorBoundary });
