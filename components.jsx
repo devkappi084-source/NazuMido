@@ -163,17 +163,23 @@ function Welcome() {
           <div className="welcome-text">
             <span className="eyebrow">Willkommen</span>
             <h2 style={{ marginTop: 16 }}>
-              Drei Farben,<br/>ein <span className="it">Herzschlag.</span>
+              Die Narrenzunft der<br/><span className="it">Schwarzen Grafen.</span>
             </h2>
             <p style={{ marginTop: 22 }}>
-              Rot wie das Lachen unserer Garde, weiß wie der frische
-              Februarschnee am Hauptplatz, grün wie der Tannenwald rundum:
-              In diesen Farben tanzen, singen und feiern wir seit 1962.
+              Die NAZU-MIDO ist seit 1996 ein eingetragener Verein, der sich
+              bemüht, das Brauchtum im und um den Fasching in Micheldorf zu pflegen.
             </p>
             <p>
-              Wir sind ein Verein aus Freundinnen und Freunden, die im Winter
-              das Dorf auf den Kopf stellen — und das ganze Jahr über
-              zusammenstehen. Komm vorbei. Schau zu. Mach mit.
+              Unser Name leitet sich von den alten Sensenschmieden ab — diese wurden
+              als schwarze Grafen bezeichnet. In unserem Wappen finden sich die Farben
+              von Micheldorf und die sogenannte Feinsonne, ein Zeichen, das von den
+              ansässigen Schmieden verwendet wurde.
+            </p>
+            <p>
+              Offizielle Botschafter für die 5. Jahreszeit sind Präsident Johann Bloderer
+              und Vizepräsidentin Tamara Schubert. Musikalisch werden wir von unserem
+              Trommler- und Fanfarenzug vertreten, diverse Veranstaltungen werden durch
+              Aufführungen unserer Tanzgruppe aufgewertet.
             </p>
             <div className="signature">— {SITE_CONFIG.presidentName}, Präsident</div>
           </div>
@@ -397,6 +403,7 @@ function PeopleBlock() {
                 <div className="role">{p.role}</div>
               </div>
               <p className="bio">{p.bio}</p>
+              {p.phone && <div className="contact">{p.phone}</div>}
               <div className="contact">{p.contact}</div>
             </div>
           ))}
@@ -434,9 +441,10 @@ function NewsletterBlock() {
               Termine, Rückblicke, Anekdoten. Kein Spam, nur Schalk.
             </p>
             <div style={{ marginTop: 36, fontSize: 14, color: 'rgba(255,255,255,0.78)' }}>
-              <strong style={{ color: 'white' }}>Vereinslokal:</strong> {SITE_CONFIG.address}, {SITE_CONFIG.city}<br/>
-              <strong style={{ color: 'white' }}>Tel:</strong> {SITE_CONFIG.phone} &nbsp;·&nbsp;
-              <strong style={{ color: 'white' }}>Mail:</strong> {SITE_CONFIG.email}
+              <strong style={{ color: 'white' }}>Adresse:</strong> {SITE_CONFIG.address}, {SITE_CONFIG.city}<br/>
+              <strong style={{ color: 'white' }}>Mail:</strong> {SITE_CONFIG.email} &nbsp;·&nbsp;
+              <strong style={{ color: 'white' }}>Web:</strong>{' '}
+              <a href={SITE_CONFIG.website} style={{ color: 'rgba(255,255,255,0.78)' }} target="_blank" rel="noopener noreferrer">{SITE_CONFIG.websiteLabel}</a>
             </div>
           </div>
 
@@ -549,7 +557,7 @@ function Footer({ navigate }) {
               <li>{SITE_CONFIG.address}</li>
               <li>{SITE_CONFIG.city}</li>
               <li>{SITE_CONFIG.email}</li>
-              <li>{SITE_CONFIG.phone}</li>
+              <li><a href={SITE_CONFIG.website} style={{ color: 'inherit' }} target="_blank" rel="noopener noreferrer">{SITE_CONFIG.websiteLabel}</a></li>
             </ul>
           </div>
         </div>
