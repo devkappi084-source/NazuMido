@@ -1,181 +1,285 @@
 // routes/api.js — REST-API-Endpunkte für Nazumido
 //
-// Stellt CRUD-Endpunkte für News und Events sowie einen Lese-Endpunkt für
-// Foto-Metadaten bereit. Der eigentliche Foto-Upload wird in routes/uploads.js
-// abgewickelt.
+// Öffentliche Endpunkte (Beiträge lesen, Einstellungen lesen, Login) sowie
+// geschützte Admin-Endpunkte (Beiträge verwalten, Einstellungen ändern, Fotos
+// hochladen). Die Authentifizierung erfolgt per JWT (siehe middleware/auth.js).
 
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
+const multer = require('multer');
+const bcrypt = require('bcryptjs');
+
 const router = express.Router();
 const { run, get, all } = require('../db/init');
+const { signToken, requireAuth } = require('../middleware/auth');
 
 // Kleiner Wrapper, damit async-Fehler an den Express-Error-Handler gehen
-const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const wrap = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
 
 // ---------------------------------------------------------------------------
-// Health / Info
+// Upload-Konfiguration (Multer) — für POST /api/upload
 // ---------------------------------------------------------------------------
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, '..', 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const MAX_UPLOAD_SIZE = Number(process.env.MAX_UPLOAD_SIZE) || 5 * 1024 * 1024; // 5 MB
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const base = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-z0-9_-]/gi, '_')
+      .slice(0, 40);
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `${base || 'foto'}-${unique}${ext}`);
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  if (ALLOWED_MIME.has(file.mimetype)) return cb(null, true);
+  const err = new Error('Nur Bilddateien (JPEG, PNG, WebP, GIF) sind erlaubt');
+  err.status = 400; // Client-Fehler, kein Serverfehler
+  cb(err);
+};
+
+const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_UPLOAD_SIZE } });
+
+// ===========================================================================
+// Health / Info
+// ===========================================================================
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'nazumido-api', time: new Date().toISOString() });
 });
 
 // ===========================================================================
-// NEWS
+// ÖFFENTLICH: Beiträge (nur aktive)
 // ===========================================================================
 
-// Alle News (neueste zuerst)
+// GET /api/posts — alle aktiven Beiträge (neueste zuerst)
 router.get(
-  '/news',
+  '/posts',
   wrap(async (req, res) => {
-    const rows = await all('SELECT * FROM news ORDER BY created_at DESC, id DESC');
+    const rows = await all(
+      `SELECT * FROM posts WHERE is_active = 1
+       ORDER BY created_at DESC, id DESC`
+    );
     res.json(rows);
   })
 );
 
-// Einzelne News
+// GET /api/posts/:id — einzelner aktiver Beitrag
 router.get(
-  '/news/:id',
+  '/posts/:id',
   wrap(async (req, res) => {
-    const row = await get('SELECT * FROM news WHERE id = ?', [req.params.id]);
-    if (!row) return res.status(404).json({ error: 'News nicht gefunden' });
+    const row = await get(
+      'SELECT * FROM posts WHERE id = ? AND is_active = 1',
+      [req.params.id]
+    );
+    if (!row) return res.status(404).json({ error: 'Beitrag nicht gefunden' });
     res.json(row);
   })
 );
 
-// News anlegen
-router.post(
-  '/news',
+// ===========================================================================
+// ÖFFENTLICH: Einstellungen
+// ===========================================================================
+
+// GET /api/settings — Website-Einstellungen als Objekt { key: value }
+router.get(
+  '/settings',
   wrap(async (req, res) => {
-    const { tag, tag_color, title, excerpt, body, image, feature } = req.body;
-    if (!title) return res.status(400).json({ error: 'title ist erforderlich' });
+    const rows = await all('SELECT key, value FROM settings');
+    const settings = {};
+    for (const { key, value } of rows) settings[key] = value;
+    res.json(settings);
+  })
+);
+
+// ===========================================================================
+// AUTH: Login
+// ===========================================================================
+
+// POST /api/login — Admin-Anmeldung, liefert bei Erfolg ein JWT
+router.post(
+  '/login',
+  wrap(async (req, res) => {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res
+        .status(400)
+        .json({ error: 'username und password sind erforderlich' });
+    }
+
+    const admin = await get('SELECT * FROM admins WHERE username = ?', [username]);
+
+    // Auch bei unbekanntem Nutzer einen Hash-Vergleich durchführen, um
+    // Timing-Rückschlüsse auf existierende Benutzernamen zu erschweren.
+    const hash = admin ? admin.password_hash : '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinva';
+    const ok = await bcrypt.compare(password, hash);
+
+    if (!admin || !ok) {
+      return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+    }
+
+    const token = signToken(admin);
+    res.json({
+      token,
+      admin: { id: admin.id, username: admin.username },
+    });
+  })
+);
+
+// ===========================================================================
+// GESCHÜTZT: Beiträge verwalten
+// ===========================================================================
+
+// POST /api/admin/posts — neuen Beitrag erstellen
+router.post(
+  '/admin/posts',
+  requireAuth,
+  wrap(async (req, res) => {
+    const { title, content, photo_url, is_active } = req.body || {};
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: 'title ist erforderlich' });
+    }
     const result = await run(
-      `INSERT INTO news (tag, tag_color, title, excerpt, body, image, feature)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [tag || null, tag_color || 'red', title, excerpt || null, body || null, image || null, feature ? 1 : 0]
+      `INSERT INTO posts (title, content, photo_url, is_active)
+       VALUES (?, ?, ?, ?)`,
+      [
+        String(title).trim(),
+        content ?? null,
+        photo_url ?? null,
+        is_active === undefined ? 1 : is_active ? 1 : 0,
+      ]
     );
-    const created = await get('SELECT * FROM news WHERE id = ?', [result.lastID]);
+    const created = await get('SELECT * FROM posts WHERE id = ?', [result.lastID]);
     res.status(201).json(created);
   })
 );
 
-// News aktualisieren
+// PUT /api/admin/posts/:id — Beitrag bearbeiten
 router.put(
-  '/news/:id',
+  '/admin/posts/:id',
+  requireAuth,
   wrap(async (req, res) => {
-    const existing = await get('SELECT * FROM news WHERE id = ?', [req.params.id]);
-    if (!existing) return res.status(404).json({ error: 'News nicht gefunden' });
+    const existing = await get('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Beitrag nicht gefunden' });
 
     const merged = {
-      tag: req.body.tag ?? existing.tag,
-      tag_color: req.body.tag_color ?? existing.tag_color,
       title: req.body.title ?? existing.title,
-      excerpt: req.body.excerpt ?? existing.excerpt,
-      body: req.body.body ?? existing.body,
-      image: req.body.image ?? existing.image,
-      feature: req.body.feature != null ? (req.body.feature ? 1 : 0) : existing.feature,
+      content: req.body.content ?? existing.content,
+      photo_url: req.body.photo_url ?? existing.photo_url,
+      is_active:
+        req.body.is_active === undefined
+          ? existing.is_active
+          : req.body.is_active
+          ? 1
+          : 0,
     };
 
+    if (!merged.title || !String(merged.title).trim()) {
+      return res.status(400).json({ error: 'title darf nicht leer sein' });
+    }
+
     await run(
-      `UPDATE news SET tag = ?, tag_color = ?, title = ?, excerpt = ?, body = ?, image = ?, feature = ?
+      `UPDATE posts
+         SET title = ?, content = ?, photo_url = ?, is_active = ?,
+             updated_at = datetime('now')
        WHERE id = ?`,
-      [merged.tag, merged.tag_color, merged.title, merged.excerpt, merged.body, merged.image, merged.feature, req.params.id]
+      [merged.title, merged.content, merged.photo_url, merged.is_active, req.params.id]
     );
-    const updated = await get('SELECT * FROM news WHERE id = ?', [req.params.id]);
+    const updated = await get('SELECT * FROM posts WHERE id = ?', [req.params.id]);
     res.json(updated);
   })
 );
 
-// News löschen
+// DELETE /api/admin/posts/:id — Beitrag löschen
 router.delete(
-  '/news/:id',
+  '/admin/posts/:id',
+  requireAuth,
   wrap(async (req, res) => {
-    const result = await run('DELETE FROM news WHERE id = ?', [req.params.id]);
-    if (result.changes === 0) return res.status(404).json({ error: 'News nicht gefunden' });
+    const result = await run('DELETE FROM posts WHERE id = ?', [req.params.id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Beitrag nicht gefunden' });
+    }
     res.json({ deleted: true, id: Number(req.params.id) });
   })
 );
 
 // ===========================================================================
-// EVENTS
+// GESCHÜTZT: Einstellungen aktualisieren
 // ===========================================================================
 
-router.get(
-  '/events',
-  wrap(async (req, res) => {
-    const rows = await all('SELECT * FROM events ORDER BY event_date ASC, id ASC');
-    res.json(rows);
-  })
-);
-
-router.get(
-  '/events/:id',
-  wrap(async (req, res) => {
-    const row = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
-    if (!row) return res.status(404).json({ error: 'Event nicht gefunden' });
-    res.json(row);
-  })
-);
-
-router.post(
-  '/events',
-  wrap(async (req, res) => {
-    const { title, kind, description, event_date, event_time, location } = req.body;
-    if (!title) return res.status(400).json({ error: 'title ist erforderlich' });
-    const result = await run(
-      `INSERT INTO events (title, kind, description, event_date, event_time, location)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [title, kind || null, description || null, event_date || null, event_time || null, location || null]
-    );
-    const created = await get('SELECT * FROM events WHERE id = ?', [result.lastID]);
-    res.status(201).json(created);
-  })
-);
-
+// PUT /api/admin/settings — Einstellungen (Teil-Update per Objekt) speichern
 router.put(
-  '/events/:id',
+  '/admin/settings',
+  requireAuth,
   wrap(async (req, res) => {
-    const existing = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
-    if (!existing) return res.status(404).json({ error: 'Event nicht gefunden' });
+    const body = req.body || {};
+    const keys = Object.keys(body);
+    if (keys.length === 0) {
+      return res
+        .status(400)
+        .json({ error: 'Es wurden keine Einstellungen übermittelt' });
+    }
 
-    const merged = {
-      title: req.body.title ?? existing.title,
-      kind: req.body.kind ?? existing.kind,
-      description: req.body.description ?? existing.description,
-      event_date: req.body.event_date ?? existing.event_date,
-      event_time: req.body.event_time ?? existing.event_time,
-      location: req.body.location ?? existing.location,
-    };
+    for (const key of keys) {
+      const value = body[key];
+      // Upsert: vorhandenen Schlüssel überschreiben, sonst neu anlegen
+      await run(
+        `INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [key, value == null ? null : String(value)]
+      );
+    }
 
-    await run(
-      `UPDATE events SET title = ?, kind = ?, description = ?, event_date = ?, event_time = ?, location = ?
-       WHERE id = ?`,
-      [merged.title, merged.kind, merged.description, merged.event_date, merged.event_time, merged.location, req.params.id]
-    );
-    const updated = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
-    res.json(updated);
-  })
-);
-
-router.delete(
-  '/events/:id',
-  wrap(async (req, res) => {
-    const result = await run('DELETE FROM events WHERE id = ?', [req.params.id]);
-    if (result.changes === 0) return res.status(404).json({ error: 'Event nicht gefunden' });
-    res.json({ deleted: true, id: Number(req.params.id) });
+    const rows = await all('SELECT key, value FROM settings');
+    const settings = {};
+    for (const { key, value } of rows) settings[key] = value;
+    res.json(settings);
   })
 );
 
 // ===========================================================================
-// PHOTOS (nur Lesen; Upload läuft über /api/uploads)
+// GESCHÜTZT: Foto-Upload
 // ===========================================================================
 
-router.get(
-  '/photos',
+// POST /api/upload — einzelnes Foto hochladen (Feldname: "photo")
+// Liefert die öffentlich erreichbare URL unter /uploads zurück.
+router.post(
+  '/upload',
+  requireAuth,
+  upload.single('photo'),
   wrap(async (req, res) => {
-    const rows = await all('SELECT * FROM photos ORDER BY uploaded_at DESC, id DESC');
-    // Öffentlich erreichbare URL ergänzen
-    const withUrl = rows.map((p) => ({ ...p, url: `/uploads/${p.filename}` }));
-    res.json(withUrl);
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ error: 'Keine Datei empfangen (Feldname "photo")' });
+    }
+    res.status(201).json({
+      filename: req.file.filename,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      url: `/uploads/${req.file.filename}`,
+    });
   })
 );
+
+// ---------------------------------------------------------------------------
+// Multer-spezifische Fehler (z. B. Datei zu groß) sauber aufbereiten
+// ---------------------------------------------------------------------------
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: `Upload-Fehler: ${err.message}` });
+  }
+  next(err);
+});
 
 module.exports = router;

@@ -1,12 +1,14 @@
 // db/init.js — Initialisierung der SQLite-Datenbank für Nazumido
 //
 // Legt die Datenbankdatei an (falls nicht vorhanden), erstellt die Tabellen
-// und befüllt sie beim ersten Start mit ein paar Beispieldaten (Seed).
-// Exportiert eine gemeinsam genutzte Datenbankverbindung sowie kleine
-// Promise-Helfer (run/get/all), damit die Routen bequem async/await nutzen können.
+// (posts, settings, admins) und befüllt sie beim ersten Start mit Standard-
+// werten (Seed). Exportiert eine gemeinsam genutzte Datenbankverbindung sowie
+// kleine Promise-Helfer (run/get/all), damit die Routen bequem async/await
+// nutzen können.
 
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 
 // Pfad zur DB-Datei aus der Umgebung ableiten (Default: ./db/nazumido.sqlite)
@@ -64,49 +66,30 @@ function all(sql, params = []) {
 // Schema
 // ---------------------------------------------------------------------------
 const SCHEMA = [
-  // Neuigkeiten / News
-  `CREATE TABLE IF NOT EXISTS news (
-     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-     tag        TEXT,
-     tag_color  TEXT DEFAULT 'red',
-     title      TEXT NOT NULL,
-     excerpt    TEXT,
-     body       TEXT,
-     image      TEXT,
-     feature    INTEGER DEFAULT 0,
-     created_at TEXT DEFAULT (datetime('now'))
-   )`,
-
-  // Veranstaltungen / Events
-  `CREATE TABLE IF NOT EXISTS events (
+  // Beiträge / Posts (Neuigkeiten der Website)
+  `CREATE TABLE IF NOT EXISTS posts (
      id         INTEGER PRIMARY KEY AUTOINCREMENT,
      title      TEXT NOT NULL,
-     kind       TEXT,
-     description TEXT,
-     event_date TEXT,
-     event_time TEXT,
-     location   TEXT,
-     created_at TEXT DEFAULT (datetime('now'))
+     content    TEXT,
+     photo_url  TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+     is_active  INTEGER NOT NULL DEFAULT 1
    )`,
 
-  // Fotos (Metadaten; die Datei liegt im uploads-Ordner)
-  `CREATE TABLE IF NOT EXISTS photos (
-     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-     title       TEXT,
-     grp         TEXT,
-     filename    TEXT NOT NULL,
-     mimetype    TEXT,
-     size        INTEGER,
-     uploaded_at TEXT DEFAULT (datetime('now'))
+  // Website-Einstellungen als Schlüssel/Wert-Paare
+  // (Logo, Beschreibung, Vereinsname, Kontakt, …)
+  `CREATE TABLE IF NOT EXISTS settings (
+     key   TEXT PRIMARY KEY,
+     value TEXT
    )`,
 
-  // Admin-Benutzer (einfache Grundlage für spätere Authentifizierung)
+  // Admin-Benutzer für das geschützte Backend
   `CREATE TABLE IF NOT EXISTS admins (
-     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-     email      TEXT UNIQUE NOT NULL,
-     name       TEXT,
-     role       TEXT DEFAULT 'Vorstand',
-     created_at TEXT DEFAULT (datetime('now'))
+     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+     username      TEXT UNIQUE NOT NULL,
+     password_hash TEXT NOT NULL,
+     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
    )`,
 ];
 
@@ -114,79 +97,72 @@ const SCHEMA = [
 // Seed-Daten (nur beim ersten Start, wenn die Tabellen leer sind)
 // ---------------------------------------------------------------------------
 async function seed() {
-  const newsCount = await get('SELECT COUNT(*) AS c FROM news');
-  if (newsCount.c === 0) {
-    const seedNews = [
+  // --- Beispiel-Beiträge --------------------------------------------------
+  const postCount = await get('SELECT COUNT(*) AS c FROM posts');
+  if (postCount.c === 0) {
+    const seedPosts = [
       {
-        tag: 'Rückblick',
-        tag_color: 'red',
         title: 'Garde brilliert bei der Marktgemeinde-Gala',
-        excerpt:
-          'Mit funkelnden Pailletten und präzisen Hebefiguren eröffnete unsere Garde die diesjährige Faschingssaison.',
-        body: 'Punkt 14 Uhr schmettern die Trompeten und unsere Garde wirbelt über den Marktplatz. Was für ein Auftakt für die Session 2026!',
-        image: 'assets/garde.png',
-        feature: 1,
+        content:
+          'Mit funkelnden Pailletten und präzisen Hebefiguren eröffnete unsere Garde die diesjährige Faschingssaison. Was für ein Auftakt für die Session 2026!',
+        photo_url: '/uploads/garde.png',
       },
       {
-        tag: 'Ankündigung',
-        tag_color: 'green',
         title: 'Saisonauftakt 2026 — Tickets ab sofort erhältlich',
-        excerpt:
-          'Der Vorverkauf für unseren großen Faschingsumzug am 14. Februar startet.',
-        body: 'Sichert euch eure Plätze unter Tel. 07582 / 81 12 oder direkt im Vereinslokal Gasthof Hofer.',
-        image: null,
-        feature: 0,
+        content:
+          'Der Vorverkauf für unseren großen Faschingsumzug am 14. Februar startet. Sichert euch eure Plätze unter Tel. 07582 / 81 12 oder direkt im Vereinslokal Gasthof Hofer.',
+        photo_url: null,
       },
     ];
-    for (const n of seedNews) {
+    for (const p of seedPosts) {
       await run(
-        `INSERT INTO news (tag, tag_color, title, excerpt, body, image, feature)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [n.tag, n.tag_color, n.title, n.excerpt, n.body, n.image, n.feature]
+        `INSERT INTO posts (title, content, photo_url) VALUES (?, ?, ?)`,
+        [p.title, p.content, p.photo_url]
       );
     }
-    console.log(`[db] Seed: ${seedNews.length} News eingefügt`);
+    console.log(`[db] Seed: ${seedPosts.length} Beiträge eingefügt`);
   }
 
-  const eventCount = await get('SELECT COUNT(*) AS c FROM events');
-  if (eventCount.c === 0) {
-    const seedEvents = [
-      {
-        title: 'Großer Faschingsumzug',
-        kind: 'Hauptevent · Session 2026',
-        description:
-          'Über 30 Gruppen, 12 Wagen, eine Stadt im Ausnahmezustand. Start am Hauptplatz.',
-        event_date: '2026-02-14',
-        event_time: '14:00',
-        location: 'Hauptplatz Micheldorf',
-      },
-      {
-        title: 'Prinzenball',
-        kind: 'Gala · Eintritt 28 €',
-        description:
-          'Großer Galaball mit Inthronisation des Prinzenpaars. Liveband, Garde-Show, Mitternachtseinlage.',
-        event_date: '2026-02-21',
-        event_time: '19:30',
-        location: 'Festsaal Micheldorf',
-      },
-    ];
-    for (const e of seedEvents) {
+  // --- Standard-Einstellungen ---------------------------------------------
+  const settingsCount = await get('SELECT COUNT(*) AS c FROM settings');
+  if (settingsCount.c === 0) {
+    const seedSettings = {
+      vereinsname: 'Faschingsverein Nazumido',
+      beschreibung:
+        'Der Faschingsverein Nazumido aus Micheldorf, OÖ — seit 1962 im Zeichen von Garde, Guggenmusik und geselligem Vereinsleben.',
+      logo_url: '/assets/logo.png',
+      email: 'info@nazumido.at',
+      telefon: '07582 / 81 12',
+      adresse: 'Gasthof Hofer, 4592 Micheldorf, OÖ',
+      gegruendet: '1962',
+    };
+    for (const [key, value] of Object.entries(seedSettings)) {
       await run(
-        `INSERT INTO events (title, kind, description, event_date, event_time, location)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [e.title, e.kind, e.description, e.event_date, e.event_time, e.location]
+        `INSERT INTO settings (key, value) VALUES (?, ?)`,
+        [key, value]
       );
     }
-    console.log(`[db] Seed: ${seedEvents.length} Events eingefügt`);
+    console.log(
+      `[db] Seed: ${Object.keys(seedSettings).length} Einstellungen eingefügt`
+    );
   }
 
+  // --- Standard-Admin ------------------------------------------------------
   const adminCount = await get('SELECT COUNT(*) AS c FROM admins');
   if (adminCount.c === 0) {
+    const username = process.env.ADMIN_USERNAME || 'admin';
+    const password = process.env.ADMIN_PASSWORD || 'nazumido';
+    const hash = await bcrypt.hash(password, 10);
     await run(
-      `INSERT INTO admins (email, name, role) VALUES (?, ?, ?)`,
-      ['vorstand@nazumido.at', 'Vorstand Nazumido', 'Vorstand']
+      `INSERT INTO admins (username, password_hash) VALUES (?, ?)`,
+      [username, hash]
     );
-    console.log('[db] Seed: Standard-Admin eingefügt');
+    console.log(
+      `[db] Seed: Standard-Admin "${username}" angelegt` +
+        (process.env.ADMIN_PASSWORD
+          ? ''
+          : ' (Standardpasswort "nazumido" — bitte in Produktion ändern!)')
+    );
   }
 }
 

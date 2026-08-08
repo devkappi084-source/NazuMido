@@ -43,19 +43,7 @@
         padding: 1rem 1.15rem;
         margin-bottom: 0.9rem;
       }
-      .tag {
-        display: inline-block;
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        padding: 0.15rem 0.5rem;
-        border-radius: 999px;
-        color: #fff;
-        margin-bottom: 0.4rem;
-      }
-      .tag.red { background: var(--red); }
-      .tag.green { background: var(--green); }
-      .tag.gold { background: var(--gold); color: var(--ink); }
+      .card img { width: 100%; max-height: 320px; object-fit: cover; border-radius: 8px; margin-bottom: 0.6rem; }
       .card h3 { margin: 0.15rem 0 0.4rem; }
       .muted { color: #7c7363; font-size: 0.85rem; }
       .empty { color: #7c7363; font-style: italic; }
@@ -65,29 +53,19 @@
   </head>
   <body>
     <header>
-      <h1>Nazumido</h1>
-      <p>Faschingsverein Micheldorf, OÖ · seit 1962</p>
+      <h1 id="vereinsname">Nazumido</h1>
+      <p id="beschreibung">Faschingsverein Micheldorf, OÖ · seit 1962</p>
     </header>
 
     <main>
       <section>
         <h2>Neuigkeiten</h2>
-        <div id="news"><p class="empty">Lädt …</p></div>
-      </section>
-
-      <section>
-        <h2>Veranstaltungen</h2>
-        <div id="events"><p class="empty">Lädt …</p></div>
-      </section>
-
-      <section>
-        <h2>Fotogalerie</h2>
-        <div id="photos"><p class="empty">Lädt …</p></div>
+        <div id="posts"><p class="empty">Lädt …</p></div>
       </section>
     </main>
 
     <footer>
-      © 1962–<span id="year"></span> Nazumido ·
+      © 1962–<span id="year"></span> <span id="footer-name">Nazumido</span> ·
       <a class="admin-link" href="/admin">Admin-Panel</a>
     </footer>
 
@@ -106,19 +84,35 @@
         );
       }
 
-      async function renderNews() {
-        const el = document.getElementById('news');
+      async function renderSettings() {
         try {
-          const items = await loadJSON('/api/news');
+          const s = await loadJSON('/api/settings');
+          if (s.vereinsname) {
+            document.getElementById('vereinsname').textContent = s.vereinsname;
+            document.getElementById('footer-name').textContent = s.vereinsname;
+            document.title = s.vereinsname;
+          }
+          if (s.beschreibung) {
+            document.getElementById('beschreibung').textContent = s.beschreibung;
+          }
+        } catch (e) {
+          /* Header-Standardwerte beibehalten */
+        }
+      }
+
+      async function renderPosts() {
+        const el = document.getElementById('posts');
+        try {
+          const items = await loadJSON('/api/posts');
           if (!items.length) return (el.innerHTML = '<p class="empty">Noch keine Neuigkeiten.</p>');
           el.innerHTML = items
             .map(
-              (n) => `
+              (p) => `
               <article class="card">
-                <span class="tag ${esc(n.tag_color || 'red')}">${esc(n.tag || 'News')}</span>
-                <h3>${esc(n.title)}</h3>
-                <p>${esc(n.excerpt || '')}</p>
-                <p class="muted">${esc(n.created_at || '')}</p>
+                ${p.photo_url ? `<img src="${esc(p.photo_url)}" alt="${esc(p.title)}" />` : ''}
+                <h3>${esc(p.title)}</h3>
+                <p>${esc(p.content || '')}</p>
+                <p class="muted">${esc((p.created_at || '').slice(0, 16))}</p>
               </article>`
             )
             .join('');
@@ -127,48 +121,8 @@
         }
       }
 
-      async function renderEvents() {
-        const el = document.getElementById('events');
-        try {
-          const items = await loadJSON('/api/events');
-          if (!items.length) return (el.innerHTML = '<p class="empty">Keine Termine geplant.</p>');
-          el.innerHTML = items
-            .map(
-              (e) => `
-              <article class="card">
-                <h3>${esc(e.title)}</h3>
-                <p class="muted">${esc(e.event_date || '')} ${esc(e.event_time || '')} · ${esc(e.location || '')}</p>
-                <p>${esc(e.description || '')}</p>
-              </article>`
-            )
-            .join('');
-        } catch (e) {
-          el.innerHTML = '<p class="empty">Fehler beim Laden.</p>';
-        }
-      }
-
-      async function renderPhotos() {
-        const el = document.getElementById('photos');
-        try {
-          const items = await loadJSON('/api/photos');
-          if (!items.length) return (el.innerHTML = '<p class="empty">Noch keine Fotos.</p>');
-          el.innerHTML =
-            '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.6rem">' +
-            items
-              .map(
-                (p) => `<figure style="margin:0"><img src="${esc(p.url)}" alt="${esc(p.title || '')}"
-                  style="width:100%;height:120px;object-fit:cover;border-radius:8px" /></figure>`
-              )
-              .join('') +
-            '</div>';
-        } catch (e) {
-          el.innerHTML = '<p class="empty">Fehler beim Laden.</p>';
-        }
-      }
-
-      renderNews();
-      renderEvents();
-      renderPhotos();
+      renderSettings();
+      renderPosts();
     </script>
   </body>
 </html>

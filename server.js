@@ -14,7 +14,6 @@ const bodyParser = require('body-parser');
 
 const { initDb } = require('./db/init');
 const apiRoutes = require('./routes/api');
-const uploadRoutes = require('./routes/uploads');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -68,7 +67,6 @@ app.use('/uploads', express.static(UPLOAD_DIR));   // hochgeladene Fotos
 // Routen
 // ---------------------------------------------------------------------------
 app.use('/api', apiRoutes);
-app.use('/api/uploads', uploadRoutes);
 
 // Admin-Panel bequem unter /admin erreichbar
 app.get('/admin', (req, res) => {
