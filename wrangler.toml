@@ -18,7 +18,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "nazumido-db"
-database_id = "HIER-DIE-ID-AUS-wrangler-d1-create-EINTRAGEN"
+database_id = "9e08812e-fcd9-4be5-9d8f-20e284cadde9"
 
 # ---------------------------------------------------------------------------
 # R2 — Objektspeicher für hochgeladene Fotos (ersetzt den /uploads-Ordner).
