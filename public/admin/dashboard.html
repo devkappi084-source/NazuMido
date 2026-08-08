@@ -7,28 +7,11 @@
     <link rel="stylesheet" href="/admin/admin.css" />
   </head>
   <body>
-    <!-- ================= LOGIN ================= -->
-    <section id="login-view" class="login">
-      <form id="login-form" class="login-card">
-        <div class="logo">🎭</div>
-        <h1>Nazumido Admin</h1>
-        <p class="tag">Bitte melde dich an, um fortzufahren</p>
-        <div id="login-error" class="err" hidden></div>
-        <div class="field">
-          <label for="username">Benutzername</label>
-          <input id="username" name="username" type="text" autocomplete="username" required />
-        </div>
-        <div class="field">
-          <label for="password">Passwort</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" required />
-        </div>
-        <button type="submit" class="btn block">🔑 Anmelden</button>
-        <p class="hint">Standard (Entwicklung): <code>admin</code> / <code>nazumido</code></p>
-      </form>
-    </section>
+    <!-- Login läuft über die separate Seite /login.html.
+         admin.js leitet ohne gültiges Token automatisch dorthin um. -->
 
     <!-- ================= APP (nach Login) ================= -->
-    <div id="app-view" hidden>
+    <div id="app-view">
       <!-- Header -->
       <header class="appbar">
         <div class="brand">

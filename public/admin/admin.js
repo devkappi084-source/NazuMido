@@ -1,24 +1,47 @@
 // admin.js — Frontend-Logik für das Nazumido Admin-Dashboard
-// Reines Vanilla-JavaScript. Kommuniziert mit der REST-API unter /api,
-// Authentifizierung per JWT (Bearer-Token im localStorage).
+//
+// Reines Vanilla-JavaScript (Fetch API + Event-Listener). Kommuniziert mit der
+// REST-API unter /api, Authentifizierung per JWT (Bearer-Token im localStorage).
+//
+// Login läuft über die separate Seite /login.html. Dieses Skript setzt ein
+// gültiges Token voraus: fehlt es (oder antwortet die API mit 401), wird
+// automatisch zur Login-Seite umgeleitet.
 
 (function () {
   'use strict';
 
   const API = '/api';
+  const LOGIN_URL = '/login.html';
   const TOKEN_KEY = 'nazumido_admin_token';
+  const NAME_KEY = 'nazumido_admin_name';
   const THEME_KEY = 'nazumido_admin_theme';
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  // ------------------------------------------------------------------ Helpers
+  // ------------------------------------------------------------------ Token
   function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
-  function setToken(t) {
-    if (t) localStorage.setItem(TOKEN_KEY, t);
-    else localStorage.removeItem(TOKEN_KEY);
+
+  // Token + gespeicherte Sitzungsdaten entfernen
+  function clearSession() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(NAME_KEY);
   }
 
+  // Abmelden / fehlende Berechtigung → zurück zur Login-Seite
+  function redirectToLogin() {
+    window.location.replace(LOGIN_URL);
+  }
+
+  // ------------------------------------------------------------------ Auth-Gate
+  // Ohne Token gibt es kein Dashboard: sofort umleiten und Skript beenden,
+  // bevor irgendwelche geschützten Daten geladen werden.
+  if (!getToken()) {
+    redirectToLogin();
+    return;
+  }
+
+  // ------------------------------------------------------------------ Helpers
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
@@ -35,19 +58,28 @@
     toastTimer = setTimeout(() => (t.className = 'toast'), 3000);
   }
 
-  // Zentraler API-Aufruf: hängt Bearer-Token an und behandelt 401 einheitlich.
+  // Zentraler API-Aufruf: hängt das Bearer-Token an, wandelt JSON um und
+  // behandelt Auth- (401) sowie Netzwerkfehler einheitlich.
   async function api(path, opts = {}) {
     const headers = Object.assign({}, opts.headers);
     const token = getToken();
     if (token) headers.Authorization = 'Bearer ' + token;
 
-    const res = await fetch(API + path, Object.assign({}, opts, { headers }));
+    let res;
+    try {
+      res = await fetch(API + path, Object.assign({}, opts, { headers }));
+    } catch (err) {
+      // fetch wirft nur bei Netzwerk-/Verbindungsfehlern
+      throw new Error('Server nicht erreichbar. Bitte Verbindung prüfen.');
+    }
+
     const isJson = (res.headers.get('content-type') || '').includes('application/json');
     const data = isJson ? await res.json() : null;
 
+    // Auth-Fehler: Sitzung verwerfen und zur Login-Seite umleiten.
     if (res.status === 401) {
-      setToken('');
-      showLogin();
+      clearSession();
+      redirectToLogin();
       throw new Error((data && data.error) || 'Sitzung abgelaufen');
     }
     if (!res.ok) throw new Error((data && data.error) || 'HTTP ' + res.status);
@@ -69,24 +101,11 @@
     applyTheme(next);
   });
 
-  // ------------------------------------------------------------- View-Steuerung
-  const loginView = $('#login-view');
-  const appView = $('#app-view');
-
-  function showApp(username) {
-    loginView.hidden = true;
-    appView.hidden = false;
-    if (username) {
-      $('#user-name').textContent = username;
-      $('#user-avatar').textContent = username.charAt(0) || 'A';
-    }
-    loadPosts();
-    loadSettings();
-  }
-
-  function showLogin() {
-    loginView.hidden = false;
-    appView.hidden = true;
+  // ------------------------------------------------------------- Kopf / Benutzer
+  function showUser() {
+    const name = localStorage.getItem(NAME_KEY) || 'Admin';
+    $('#user-name').textContent = name;
+    $('#user-avatar').textContent = (name.charAt(0) || 'A').toUpperCase();
   }
 
   // Sidebar-Navigation zwischen den Sektionen
@@ -98,36 +117,10 @@
     });
   });
 
-  // ------------------------------------------------------------- Login / Logout
-  const loginForm = $('#login-form');
-  const loginError = $('#login-error');
-
-  loginForm.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    loginError.hidden = true;
-    try {
-      const data = await api('/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: $('#username').value,
-          password: $('#password').value,
-        }),
-      });
-      setToken(data.token);
-      loginForm.reset();
-      showApp(data.admin.username);
-      toast('Willkommen, ' + data.admin.username, 'ok');
-    } catch (e) {
-      loginError.textContent = e.message;
-      loginError.hidden = false;
-    }
-  });
-
+  // ------------------------------------------------------------------ Logout
   $('#logout-btn').addEventListener('click', () => {
-    setToken('');
-    toast('Abgemeldet');
-    showLogin();
+    clearSession();
+    redirectToLogin();
   });
 
   // =========================================================================
@@ -136,12 +129,19 @@
   const postList = $('#post-list');
   let postsCache = [];
 
+  function renderLoading() {
+    postList.innerHTML =
+      '<div class="empty"><span class="big">⏳</span>Beiträge werden geladen …</div>';
+  }
+
   async function loadPosts() {
+    renderLoading();
     try {
       // Admin-Endpunkt liefert auch Entwürfe (is_active = 0)
       postsCache = await api('/admin/posts');
       renderPosts();
     } catch (e) {
+      // Bei 401 läuft bereits die Umleitung; Fehlermeldung nur informativ.
       postList.innerHTML = `<div class="empty"><span class="big">⚠️</span>Fehler: ${esc(e.message)}</div>`;
     }
   }
@@ -187,6 +187,7 @@
 
   async function delPost(id) {
     const post = postsCache.find((p) => p.id == id);
+    // Bestätigungsdialog vor dem endgültigen Löschen
     if (!confirm(`Beitrag „${post ? post.title : ''}" wirklich löschen?`)) return;
     try {
       await api('/admin/posts/' + id, { method: 'DELETE' });
@@ -223,6 +224,8 @@
   }
   activeToggle.addEventListener('change', updateActiveLabel);
 
+  // Beitrag bearbeiten: Formular mit vorhandenen Daten füllen; neuer Beitrag:
+  // Formular zurücksetzen.
   function openModal(post) {
     postForm.reset();
     photoFile.value = '';
@@ -268,7 +271,7 @@
     setPhotoPreview('');
   });
 
-  // Datei hochladen und URL zurückgeben
+  // Datei per Multipart-FormData hochladen und die öffentliche URL zurückgeben
   async function uploadFile(input) {
     const file = input.files && input.files[0];
     if (!file) return null;
@@ -278,10 +281,14 @@
     return data.url;
   }
 
+  // Speichern: ggf. Foto hochladen, dann Beitrag anlegen (POST) oder
+  // aktualisieren (PUT). Loading-State über den deaktivierten Button.
   postForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const submitBtn = postForm.querySelector('button[type="submit"]');
+    const original = submitBtn.textContent;
     submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Speichern …';
     try {
       const uploaded = await uploadFile(photoFile);
       const payload = {
@@ -290,6 +297,12 @@
         photo_url: uploaded || photoUrl.value || null,
         is_active: activeToggle.checked,
       };
+
+      if (!payload.title) {
+        toast('Bitte einen Titel eingeben', 'error');
+        return;
+      }
+
       const id = $('#p-id').value;
       if (id) {
         await api('/admin/posts/' + id, {
@@ -312,6 +325,7 @@
       toast(e.message, 'error');
     } finally {
       submitBtn.disabled = false;
+      submitBtn.textContent = original;
     }
   });
 
@@ -349,10 +363,14 @@
     if (file) setLogoPreview(URL.createObjectURL(file));
   });
 
+  // Speichern: optionalen Logo-Upload durchführen, dann alle Felder per
+  // PUT /api/admin/settings übertragen.
   settingsForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const submitBtn = settingsForm.querySelector('button[type="submit"]');
+    const original = submitBtn.textContent;
     submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Speichern …';
     try {
       const uploaded = await uploadFile(logoFile);
       const payload = {
@@ -374,10 +392,13 @@
       toast(e.message, 'error');
     } finally {
       submitBtn.disabled = false;
+      submitBtn.textContent = original;
     }
   });
 
   // ----------------------------------------------------------------- Start
-  if (getToken()) showApp();
-  else showLogin();
+  // Token liegt vor (Auth-Gate oben) → Dashboard initialisieren.
+  showUser();
+  loadPosts();
+  loadSettings();
 })();
