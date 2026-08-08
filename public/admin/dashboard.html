@@ -9,87 +9,70 @@
   <body>
     <header class="topbar">
       <h1>Nazumido Admin</h1>
-      <a class="back" href="/">← Zur Website</a>
+      <div class="topbar-actions">
+        <a class="back" href="/">← Zur Website</a>
+        <button id="logout" class="linkbtn" hidden>Abmelden</button>
+      </div>
     </header>
 
-    <nav class="tabs">
-      <button class="tab active" data-tab="news">Neuigkeiten</button>
-      <button class="tab" data-tab="events">Veranstaltungen</button>
-      <button class="tab" data-tab="photos">Fotos</button>
-    </nav>
+    <!-- LOGIN -->
+    <section id="login-view" class="login">
+      <form id="login-form" class="card login-card">
+        <h2>Anmeldung</h2>
+        <label>Benutzername <input name="username" autocomplete="username" required /></label>
+        <label>Passwort <input name="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit">Anmelden</button>
+        <p class="hint">Standard (Entwicklung): <code>admin</code> / <code>nazumido</code></p>
+      </form>
+    </section>
 
-    <main>
-      <!-- NEWS -->
-      <section id="tab-news" class="tabpanel active">
-        <h2>Neuigkeit anlegen</h2>
-        <form id="news-form" class="card">
-          <div class="row">
+    <!-- APP (nach Login) -->
+    <div id="app-view" hidden>
+      <nav class="tabs">
+        <button class="tab active" data-tab="posts">Beiträge</button>
+        <button class="tab" data-tab="settings">Einstellungen</button>
+      </nav>
+
+      <main>
+        <!-- POSTS -->
+        <section id="tab-posts" class="tabpanel active">
+          <h2 id="post-form-title">Beitrag anlegen</h2>
+          <form id="post-form" class="card">
+            <input type="hidden" name="id" />
             <label>Titel <input name="title" required /></label>
-            <label>Tag <input name="tag" placeholder="z. B. Rückblick" /></label>
-          </div>
-          <div class="row">
-            <label>Tag-Farbe
-              <select name="tag_color">
-                <option value="red">Rot</option>
-                <option value="green">Grün</option>
-                <option value="gold">Gold</option>
-              </select>
+            <label>Inhalt <textarea name="content" rows="4"></textarea></label>
+            <label>Foto (optional)
+              <input name="photo" type="file" accept="image/*" />
+            </label>
+            <label>Foto-URL
+              <input name="photo_url" placeholder="wird beim Hochladen automatisch gesetzt" />
             </label>
             <label class="check">
-              <input type="checkbox" name="feature" /> Als Feature markieren
+              <input type="checkbox" name="is_active" checked /> Aktiv (öffentlich sichtbar)
             </label>
-          </div>
-          <label>Kurztext <textarea name="excerpt" rows="2"></textarea></label>
-          <label>Fließtext <textarea name="body" rows="4"></textarea></label>
-          <button type="submit">Speichern</button>
-        </form>
+            <div class="btnrow">
+              <button type="submit">Speichern</button>
+              <button type="button" id="post-cancel" class="ghost" hidden>Abbrechen</button>
+            </div>
+          </form>
 
-        <h2>Bestehende Neuigkeiten</h2>
-        <div id="news-list" class="list"></div>
-      </section>
+          <h2>Bestehende Beiträge</h2>
+          <div id="post-list" class="list"></div>
+        </section>
 
-      <!-- EVENTS -->
-      <section id="tab-events" class="tabpanel">
-        <h2>Veranstaltung anlegen</h2>
-        <form id="event-form" class="card">
-          <div class="row">
-            <label>Titel <input name="title" required /></label>
-            <label>Art <input name="kind" placeholder="z. B. Gala" /></label>
-          </div>
-          <div class="row">
-            <label>Datum <input name="event_date" type="date" /></label>
-            <label>Uhrzeit <input name="event_time" type="time" /></label>
-          </div>
-          <label>Ort <input name="location" /></label>
-          <label>Beschreibung <textarea name="description" rows="3"></textarea></label>
-          <button type="submit">Speichern</button>
-        </form>
-
-        <h2>Bestehende Veranstaltungen</h2>
-        <div id="event-list" class="list"></div>
-      </section>
-
-      <!-- PHOTOS -->
-      <section id="tab-photos" class="tabpanel">
-        <h2>Foto hochladen</h2>
-        <form id="photo-form" class="card">
-          <label>Titel <input name="title" /></label>
-          <label>Gruppe
-            <select name="group">
-              <option value="">—</option>
-              <option>Garde</option>
-              <option>Musikzug</option>
-              <option>Vorsitz</option>
-            </select>
-          </label>
-          <label>Bilddatei <input name="photo" type="file" accept="image/*" required /></label>
-          <button type="submit">Hochladen</button>
-        </form>
-
-        <h2>Galerie</h2>
-        <div id="photo-list" class="gallery"></div>
-      </section>
-    </main>
+        <!-- SETTINGS -->
+        <section id="tab-settings" class="tabpanel">
+          <h2>Website-Einstellungen</h2>
+          <form id="settings-form" class="card">
+            <div id="settings-fields"></div>
+            <div class="btnrow">
+              <button type="submit">Speichern</button>
+              <button type="button" id="settings-add" class="ghost">+ Feld hinzufügen</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
 
     <div id="toast" class="toast"></div>
 

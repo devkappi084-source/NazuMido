@@ -31,7 +31,18 @@ body {
   padding: 1rem 1.5rem;
 }
 .topbar h1 { margin: 0; font-size: 1.25rem; }
+.topbar-actions { display: flex; align-items: center; gap: 1rem; }
 .topbar .back { color: var(--gold); text-decoration: none; font-size: 0.9rem; }
+.linkbtn {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0;
+  align-self: auto;
+}
+.linkbtn:hover { background: none; text-decoration: underline; }
 
 .tabs {
   display: flex;
@@ -154,3 +165,34 @@ button:hover { background: var(--red-deep); }
 .toast.error { background: var(--red-deep); }
 
 .empty { color: var(--muted); font-style: italic; }
+
+/* Login */
+.login { max-width: 420px; margin: 3rem auto; padding: 0 1.5rem; }
+.login-card { gap: 1rem; }
+.login-card h2 { margin: 0; }
+.login-card .hint { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.login-card code { background: var(--cream); padding: 0.1rem 0.35rem; border-radius: 4px; }
+
+/* Buttons */
+.btnrow { display: flex; gap: 0.6rem; }
+button.ghost { background: none; color: var(--muted); border: 1px solid var(--line); }
+button.ghost:hover { background: var(--cream); }
+
+/* Post-Liste */
+.item-main { min-width: 0; }
+.item-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+.item .edit {
+  background: none;
+  color: var(--green);
+  border: 1px solid var(--green);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+}
+.item .edit:hover { background: var(--green); color: #fff; }
+.inactive { color: var(--red); font-weight: 600; }
+
+/* Einstellungen */
+.setting-row { display: flex; gap: 0.6rem; margin-bottom: 0.6rem; }
+.setting-row .skey { flex: 0 0 30%; }
+.setting-row .sval { flex: 1 1 auto; }
