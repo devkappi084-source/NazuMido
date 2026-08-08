@@ -140,6 +140,20 @@ router.post(
 // GESCHÜTZT: Beiträge verwalten
 // ===========================================================================
 
+// GET /api/admin/posts — alle Beiträge inkl. Entwürfe (neueste zuerst)
+// Der öffentliche Endpunkt /api/posts liefert nur aktive Beiträge; das Admin-
+// Panel benötigt zusätzlich die als Entwurf gespeicherten (is_active = 0).
+router.get(
+  '/admin/posts',
+  requireAuth,
+  wrap(async (req, res) => {
+    const rows = await all(
+      `SELECT * FROM posts ORDER BY created_at DESC, id DESC`
+    );
+    res.json(rows);
+  })
+);
+
 // POST /api/admin/posts — neuen Beitrag erstellen
 router.post(
   '/admin/posts',

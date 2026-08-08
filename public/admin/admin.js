@@ -1,38 +1,41 @@
-// admin.js — Frontend-Logik für das Nazumido Admin-Panel
-// Kommuniziert mit der REST-API unter /api. Authentifizierung per JWT.
+// admin.js — Frontend-Logik für das Nazumido Admin-Dashboard
+// Reines Vanilla-JavaScript. Kommuniziert mit der REST-API unter /api,
+// Authentifizierung per JWT (Bearer-Token im localStorage).
 
 (function () {
   'use strict';
 
   const API = '/api';
   const TOKEN_KEY = 'nazumido_admin_token';
+  const THEME_KEY = 'nazumido_admin_theme';
 
-  // -------------------------------------------------------------------------
-  // Hilfsfunktionen
-  // -------------------------------------------------------------------------
-  function getToken() {
-    return localStorage.getItem(TOKEN_KEY) || '';
-  }
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  // ------------------------------------------------------------------ Helpers
+  function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
   function setToken(t) {
     if (t) localStorage.setItem(TOKEN_KEY, t);
     else localStorage.removeItem(TOKEN_KEY);
   }
 
-  function toast(msg, isError) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'toast show' + (isError ? ' error' : '');
-    setTimeout(() => (t.className = 'toast'), 2800);
-  }
-
   function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
     );
   }
 
-  // Zentraler API-Aufruf. Hängt bei Bedarf den Bearer-Token an und behandelt
-  // 401 (Session abgelaufen) einheitlich.
+  let toastTimer;
+  function toast(msg, type) {
+    const t = $('#toast');
+    const icon = type === 'error' ? '⚠️' : type === 'ok' ? '✅' : 'ℹ️';
+    t.innerHTML = `<span>${icon}</span> ${esc(msg)}`;
+    t.className = 'toast show' + (type ? ' ' + type : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (t.className = 'toast'), 3000);
+  }
+
+  // Zentraler API-Aufruf: hängt Bearer-Token an und behandelt 401 einheitlich.
   async function api(path, opts = {}) {
     const headers = Object.assign({}, opts.headers);
     const token = getToken();
@@ -51,17 +54,32 @@
     return data;
   }
 
-  // -------------------------------------------------------------------------
-  // Ansichtssteuerung (Login <-> App)
-  // -------------------------------------------------------------------------
-  const loginView = document.getElementById('login-view');
-  const appView = document.getElementById('app-view');
-  const logoutBtn = document.getElementById('logout');
+  // ------------------------------------------------------------------ Theme
+  function applyTheme(theme) {
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    const btn = $('#theme-toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || 'light');
 
-  function showApp() {
+  $('#theme-toggle').addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
+  });
+
+  // ------------------------------------------------------------- View-Steuerung
+  const loginView = $('#login-view');
+  const appView = $('#app-view');
+
+  function showApp(username) {
     loginView.hidden = true;
     appView.hidden = false;
-    logoutBtn.hidden = false;
+    if (username) {
+      $('#user-name').textContent = username;
+      $('#user-avatar').textContent = username.charAt(0) || 'A';
+    }
     loadPosts();
     loadSettings();
   }
@@ -69,244 +87,297 @@
   function showLogin() {
     loginView.hidden = false;
     appView.hidden = true;
-    logoutBtn.hidden = true;
   }
 
-  // -------------------------------------------------------------------------
-  // Login / Logout
-  // -------------------------------------------------------------------------
-  const loginForm = document.getElementById('login-form');
+  // Sidebar-Navigation zwischen den Sektionen
+  $$('.navitem[data-view]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      $$('.navitem[data-view]').forEach((b) => b.classList.toggle('active', b === btn));
+      $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
+    });
+  });
+
+  // ------------------------------------------------------------- Login / Logout
+  const loginForm = $('#login-form');
+  const loginError = $('#login-error');
+
   loginForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const fd = new FormData(loginForm);
+    loginError.hidden = true;
     try {
       const data = await api('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: fd.get('username'),
-          password: fd.get('password'),
+          username: $('#username').value,
+          password: $('#password').value,
         }),
       });
       setToken(data.token);
       loginForm.reset();
-      toast('Willkommen, ' + data.admin.username);
-      showApp();
+      showApp(data.admin.username);
+      toast('Willkommen, ' + data.admin.username, 'ok');
     } catch (e) {
-      toast(e.message, true);
+      loginError.textContent = e.message;
+      loginError.hidden = false;
     }
   });
 
-  logoutBtn.addEventListener('click', () => {
+  $('#logout-btn').addEventListener('click', () => {
     setToken('');
     toast('Abgemeldet');
     showLogin();
   });
 
-  // -------------------------------------------------------------------------
-  // Tabs
-  // -------------------------------------------------------------------------
-  document.querySelectorAll('.tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.tabpanel').forEach((p) => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // BEITRÄGE (Posts)
-  // -------------------------------------------------------------------------
-  const postForm = document.getElementById('post-form');
-  const postList = document.getElementById('post-list');
-  const postFormTitle = document.getElementById('post-form-title');
-  const postCancel = document.getElementById('post-cancel');
+  // =========================================================================
+  // BEITRÄGE
+  // =========================================================================
+  const postList = $('#post-list');
+  let postsCache = [];
 
   async function loadPosts() {
     try {
-      // Auch inaktive Beiträge im Admin anzeigen: dazu einzeln laden wäre
-      // teuer — der öffentliche Endpunkt liefert nur aktive. Wir zeigen hier
-      // daher alle aktiven; inaktive werden nach dem Deaktivieren ausgeblendet.
-      const items = await api('/posts');
-      if (!items.length) {
-        postList.innerHTML = '<p class="empty">Noch keine Beiträge.</p>';
-        return;
-      }
-      postList.innerHTML = items
-        .map(
-          (p) => `
-          <div class="item">
-            <div class="item-main">
-              <h3>${esc(p.title)}</h3>
-              <div class="meta">
-                ${esc((p.created_at || '').slice(0, 16))}
-                ${p.photo_url ? ' · 📷' : ''}
-                ${p.is_active ? '' : ' · <span class="inactive">inaktiv</span>'}
-              </div>
-            </div>
-            <div class="item-actions">
-              <button class="edit" data-id="${p.id}">Bearbeiten</button>
-              <button class="del" data-id="${p.id}">Löschen</button>
-            </div>
-          </div>`
-        )
-        .join('');
-      postList.querySelectorAll('.edit').forEach((b) =>
-        b.addEventListener('click', () => startEdit(items.find((p) => p.id == b.dataset.id)))
-      );
-      postList.querySelectorAll('.del').forEach((b) =>
-        b.addEventListener('click', () => delPost(b.dataset.id))
-      );
+      // Admin-Endpunkt liefert auch Entwürfe (is_active = 0)
+      postsCache = await api('/admin/posts');
+      renderPosts();
     } catch (e) {
-      postList.innerHTML = '<p class="empty">Fehler: ' + esc(e.message) + '</p>';
+      postList.innerHTML = `<div class="empty"><span class="big">⚠️</span>Fehler: ${esc(e.message)}</div>`;
     }
   }
 
-  // Falls eine Datei gewählt wurde, zuerst hochladen und die URL zurückgeben.
-  async function maybeUpload() {
-    const fileInput = postForm.querySelector('input[name="photo"]');
-    if (!fileInput.files || !fileInput.files.length) return null;
+  function renderPosts() {
+    if (!postsCache.length) {
+      postList.innerHTML =
+        '<div class="empty"><span class="big">📭</span>Noch keine Beiträge. Lege den ersten an!</div>';
+      return;
+    }
+    postList.innerHTML = postsCache
+      .map((p) => {
+        const thumb = p.photo_url
+          ? `<div class="post-thumb"><img src="${esc(p.photo_url)}" alt="" /></div>`
+          : `<div class="post-thumb">📝</div>`;
+        const date = (p.created_at || '').slice(0, 10);
+        const badge = p.is_active
+          ? '<span class="badge pub"><span class="dot"></span>Veröffentlicht</span>'
+          : '<span class="badge draft"><span class="dot"></span>Entwurf</span>';
+        return `
+          <article class="post-item">
+            ${thumb}
+            <div class="post-main">
+              <h3>${esc(p.title)}</h3>
+              <div class="excerpt">${esc(p.content || '—')}</div>
+              <div class="post-meta">${badge}<span>🗓️ ${esc(date)}</span></div>
+            </div>
+            <div class="post-actions">
+              <button class="mini edit" data-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">✏️</button>
+              <button class="mini del" data-id="${p.id}" title="Löschen" aria-label="Löschen">🗑️</button>
+            </div>
+          </article>`;
+      })
+      .join('');
+
+    $$('.post-actions .edit', postList).forEach((b) =>
+      b.addEventListener('click', () => openModal(postsCache.find((p) => p.id == b.dataset.id)))
+    );
+    $$('.post-actions .del', postList).forEach((b) =>
+      b.addEventListener('click', () => delPost(b.dataset.id))
+    );
+  }
+
+  async function delPost(id) {
+    const post = postsCache.find((p) => p.id == id);
+    if (!confirm(`Beitrag „${post ? post.title : ''}" wirklich löschen?`)) return;
+    try {
+      await api('/admin/posts/' + id, { method: 'DELETE' });
+      toast('Beitrag gelöscht', 'ok');
+      loadPosts();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------- Modal (Beitrag)
+  const modal = $('#post-modal');
+  const postForm = $('#post-form');
+  const photoPreview = $('#photo-preview');
+  const photoFile = $('#photo-file');
+  const photoUrl = $('#p-photo_url');
+  const photoClear = $('#photo-clear');
+  const activeToggle = $('#p-active');
+
+  function setPhotoPreview(url) {
+    if (url) {
+      photoPreview.innerHTML = `<img src="${esc(url)}" alt="" />`;
+      photoClear.hidden = false;
+    } else {
+      photoPreview.textContent = '🖼️';
+      photoClear.hidden = true;
+    }
+  }
+
+  function updateActiveLabel() {
+    $('#p-active-label').innerHTML = activeToggle.checked
+      ? 'Veröffentlicht <small>Für alle Besucher sichtbar</small>'
+      : 'Entwurf <small>Nur intern sichtbar, nicht auf der Website</small>';
+  }
+  activeToggle.addEventListener('change', updateActiveLabel);
+
+  function openModal(post) {
+    postForm.reset();
+    photoFile.value = '';
+    if (post) {
+      $('#modal-title').textContent = 'Beitrag bearbeiten';
+      $('#p-id').value = post.id;
+      $('#p-title').value = post.title || '';
+      $('#p-content').value = post.content || '';
+      photoUrl.value = post.photo_url || '';
+      activeToggle.checked = !!post.is_active;
+      setPhotoPreview(post.photo_url);
+    } else {
+      $('#modal-title').textContent = 'Neuer Beitrag';
+      $('#p-id').value = '';
+      photoUrl.value = '';
+      activeToggle.checked = true;
+      setPhotoPreview('');
+    }
+    updateActiveLabel();
+    modal.classList.add('open');
+    setTimeout(() => $('#p-title').focus(), 50);
+  }
+
+  function closeModal() { modal.classList.remove('open'); }
+
+  $('#new-post').addEventListener('click', () => openModal(null));
+  $('#modal-close').addEventListener('click', closeModal);
+  $('#modal-cancel').addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+  });
+
+  // Foto wählen -> lokale Vorschau (Upload erst beim Speichern)
+  $('#photo-pick').addEventListener('click', () => photoFile.click());
+  photoFile.addEventListener('change', () => {
+    const file = photoFile.files && photoFile.files[0];
+    if (file) setPhotoPreview(URL.createObjectURL(file));
+  });
+  photoClear.addEventListener('click', () => {
+    photoFile.value = '';
+    photoUrl.value = '';
+    setPhotoPreview('');
+  });
+
+  // Datei hochladen und URL zurückgeben
+  async function uploadFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return null;
     const fd = new FormData();
-    fd.append('photo', fileInput.files[0]);
+    fd.append('photo', file);
     const data = await api('/upload', { method: 'POST', body: fd });
     return data.url;
   }
 
   postForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const fd = new FormData(postForm);
-    const id = fd.get('id');
+    const submitBtn = postForm.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
     try {
-      // Neues Foto hochladen (falls gewählt) und photo_url setzen
-      const uploadedUrl = await maybeUpload();
-      const photo_url = uploadedUrl || fd.get('photo_url') || null;
-
+      const uploaded = await uploadFile(photoFile);
       const payload = {
-        title: fd.get('title'),
-        content: fd.get('content'),
-        photo_url,
-        is_active: postForm.querySelector('input[name="is_active"]').checked,
+        title: $('#p-title').value.trim(),
+        content: $('#p-content').value,
+        photo_url: uploaded || photoUrl.value || null,
+        is_active: activeToggle.checked,
       };
-
+      const id = $('#p-id').value;
       if (id) {
         await api('/admin/posts/' + id, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        toast('Beitrag aktualisiert');
+        toast('Beitrag aktualisiert', 'ok');
       } else {
         await api('/admin/posts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        toast('Beitrag gespeichert');
+        toast('Beitrag gespeichert', 'ok');
       }
-      resetPostForm();
+      closeModal();
       loadPosts();
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 
-  function startEdit(post) {
-    if (!post) return;
-    postForm.querySelector('input[name="id"]').value = post.id;
-    postForm.querySelector('input[name="title"]').value = post.title || '';
-    postForm.querySelector('textarea[name="content"]').value = post.content || '';
-    postForm.querySelector('input[name="photo_url"]').value = post.photo_url || '';
-    postForm.querySelector('input[name="is_active"]').checked = !!post.is_active;
-    postFormTitle.textContent = 'Beitrag bearbeiten';
-    postCancel.hidden = false;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  // =========================================================================
+  // EINSTELLUNGEN
+  // =========================================================================
+  const settingsForm = $('#settings-form');
+  const logoPreview = $('#logo-preview');
+  const logoFile = $('#logo-file');
+  const logoUrl = $('#s-logo_url');
 
-  function resetPostForm() {
-    postForm.reset();
-    postForm.querySelector('input[name="id"]').value = '';
-    postForm.querySelector('input[name="is_active"]').checked = true;
-    postFormTitle.textContent = 'Beitrag anlegen';
-    postCancel.hidden = true;
-  }
-
-  postCancel.addEventListener('click', resetPostForm);
-
-  async function delPost(id) {
-    if (!confirm('Diesen Beitrag wirklich löschen?')) return;
-    try {
-      await api('/admin/posts/' + id, { method: 'DELETE' });
-      toast('Gelöscht');
-      loadPosts();
-    } catch (e) {
-      toast(e.message, true);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // EINSTELLUNGEN (Settings)
-  // -------------------------------------------------------------------------
-  const settingsForm = document.getElementById('settings-form');
-  const settingsFields = document.getElementById('settings-fields');
-  const settingsAdd = document.getElementById('settings-add');
-
-  function settingRow(key, value) {
-    const wrap = document.createElement('div');
-    wrap.className = 'setting-row';
-    wrap.innerHTML = `
-      <input class="skey" placeholder="Schlüssel" value="${esc(key)}" />
-      <input class="sval" placeholder="Wert" value="${esc(value)}" />`;
-    return wrap;
+  function setLogoPreview(url) {
+    if (url) logoPreview.innerHTML = `<img src="${esc(url)}" alt="" />`;
+    else logoPreview.textContent = '🎭';
   }
 
   async function loadSettings() {
     try {
-      const settings = await api('/settings');
-      settingsFields.innerHTML = '';
-      const keys = Object.keys(settings);
-      if (!keys.length) {
-        settingsFields.appendChild(settingRow('', ''));
-      } else {
-        keys.forEach((k) => settingsFields.appendChild(settingRow(k, settings[k])));
-      }
+      const s = await api('/settings');
+      $('#s-vereinsname').value = s.vereinsname || '';
+      $('#s-beschreibung').value = s.beschreibung || '';
+      $('#s-email').value = s.email || '';
+      $('#s-telefon').value = s.telefon || '';
+      $('#s-adresse').value = s.adresse || '';
+      logoUrl.value = s.logo_url || '';
+      setLogoPreview(s.logo_url);
     } catch (e) {
-      settingsFields.innerHTML = '<p class="empty">Fehler: ' + esc(e.message) + '</p>';
+      toast('Einstellungen konnten nicht geladen werden: ' + e.message, 'error');
     }
   }
 
-  settingsAdd.addEventListener('click', () => {
-    settingsFields.appendChild(settingRow('', ''));
+  $('#logo-pick').addEventListener('click', () => logoFile.click());
+  logoFile.addEventListener('change', () => {
+    const file = logoFile.files && logoFile.files[0];
+    if (file) setLogoPreview(URL.createObjectURL(file));
   });
 
   settingsForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const payload = {};
-    settingsFields.querySelectorAll('.setting-row').forEach((row) => {
-      const key = row.querySelector('.skey').value.trim();
-      const value = row.querySelector('.sval').value;
-      if (key) payload[key] = value;
-    });
-    if (!Object.keys(payload).length) {
-      toast('Keine Einstellungen zum Speichern', true);
-      return;
-    }
+    const submitBtn = settingsForm.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
     try {
+      const uploaded = await uploadFile(logoFile);
+      const payload = {
+        vereinsname: $('#s-vereinsname').value,
+        beschreibung: $('#s-beschreibung').value,
+        email: $('#s-email').value,
+        telefon: $('#s-telefon').value,
+        adresse: $('#s-adresse').value,
+        logo_url: uploaded || logoUrl.value || '',
+      };
       await api('/admin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      toast('Einstellungen gespeichert');
-      loadSettings();
+      if (uploaded) { logoUrl.value = uploaded; logoFile.value = ''; }
+      toast('Einstellungen gespeichert', 'ok');
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 
-  // -------------------------------------------------------------------------
-  // Start: Token vorhanden? -> App, sonst Login
-  // -------------------------------------------------------------------------
+  // ----------------------------------------------------------------- Start
   if (getToken()) showApp();
   else showLogin();
 })();
