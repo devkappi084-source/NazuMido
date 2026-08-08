@@ -147,6 +147,43 @@ npm run cf:test
 
 ---
 
+## Alternative: komplett über das Dashboard (ohne Terminal)
+
+Wer keine Befehle tippen möchte, kann alles im Browser auf
+[dash.cloudflare.com](https://dash.cloudflare.com) erledigen. Cloudflare baut den
+Worker dann selbst aus dem verbundenen GitHub-Repo („Workers Builds").
+
+> Hinweise: R2 verlangt einmalig eine hinterlegte Zahlungsart (Gratis-Stufe
+> kostet nichts). Eine kleine Änderung an `wrangler.toml` (die Database ID) wird
+> über die GitHub-Weboberfläche gemacht — ebenfalls ohne Terminal.
+
+**A) D1-Datenbank anlegen**
+1. **Storage & Databases → D1 SQL Database → Create Database** → Name `nazumido-db`.
+2. Datenbank öffnen → Tab **Console** → Inhalt von `schema.sql` einfügen → **Execute**.
+3. Die **Database ID** auf der Übersichtsseite kopieren.
+
+**B) Database ID eintragen (über github.com)**
+1. Repo öffnen → Datei `wrangler.toml` → Bearbeiten (Bleistift-Symbol).
+2. Platzhalter `HIER-DIE-ID-...` durch die Database ID ersetzen → **Commit changes**.
+
+**C) R2-Bucket anlegen**
+1. **R2 Object Storage** → ggf. aktivieren → **Create bucket** → Name `nazumido-uploads`.
+
+**D) Worker aus dem Repo deployen**
+1. **Workers & Pages → Create → Workers → Import a repository / Connect to Git**.
+2. GitHub verbinden, Repo und Branch wählen. Cloudflare liest `wrangler.toml`
+   (Assets, D1, R2) automatisch → **Save and Deploy**.
+
+**E) Geheimnisse setzen**
+1. Worker öffnen → **Settings → Variables and Secrets**.
+2. Secret `JWT_SECRET` (lange Zufallszeichenkette) und Secret `ADMIN_PASSWORD`
+   hinzufügen → oben **Deploy**.
+
+**F) Aufrufen**
+- Worker-URL öffnen, `/admin` → Login mit `admin` / `ADMIN_PASSWORD`.
+
+Ab jetzt deployt Cloudflare bei jeder Repo-Änderung automatisch neu.
+
 ## Häufige Stolperfallen
 
 - **`/admin` lädt nicht / API 404** → `wrangler.toml`: steht `main = "src/worker.js"`?
