@@ -1,0 +1,9 @@
+# Lokale Geheimnisse für `wrangler dev` (Cloudflare Worker).
+# Kopiere diese Datei zu ".dev.vars" — sie ist per .gitignore ausgeschlossen.
+# In PRODUKTION werden diese Werte NICHT hieraus gelesen, sondern per
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put ADMIN_PASSWORD
+# gesetzt.
+
+JWT_SECRET=lokaler-entwicklungs-schluessel-bitte-aendern
+ADMIN_PASSWORD=nazumido

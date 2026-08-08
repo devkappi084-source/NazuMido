@@ -1,5 +1,40 @@
 name = "nazumido2"
+main = "src/worker.js"
 compatibility_date = "2024-09-23"
 
+# ---------------------------------------------------------------------------
+# Statische Website — der Ordner public/ (Startseite, Login, Admin-Panel) wird
+# direkt von Cloudflare ausgeliefert. Der Worker läuft nur für Pfade, zu denen
+# es KEINE Datei gibt (/api/*, /uploads/*, /admin).
+# ---------------------------------------------------------------------------
 [assets]
-directory = "."
+directory = "./public"
+binding = "ASSETS"
+
+# ---------------------------------------------------------------------------
+# D1 — SQLite-kompatible Datenbank (ersetzt die lokale sqlite3-Datei).
+# database_id nach `npx wrangler d1 create nazumido-db` hier eintragen.
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "nazumido-db"
+database_id = "HIER-DIE-ID-AUS-wrangler-d1-create-EINTRAGEN"
+
+# ---------------------------------------------------------------------------
+# R2 — Objektspeicher für hochgeladene Fotos (ersetzt den /uploads-Ordner).
+# Bucket anlegen mit: `npx wrangler r2 bucket create nazumido-uploads`
+# ---------------------------------------------------------------------------
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "nazumido-uploads"
+
+# ---------------------------------------------------------------------------
+# Nicht-geheime Variablen. GEHEIMNISSE (JWT_SECRET, ADMIN_PASSWORD) NICHT hier
+# eintragen, sondern verschlüsselt setzen:
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put ADMIN_PASSWORD
+# ---------------------------------------------------------------------------
+[vars]
+ADMIN_USERNAME = "admin"
+JWT_EXPIRES_IN = "604800"     # 7 Tage in Sekunden
+MAX_UPLOAD_SIZE = "5242880"   # 5 MB

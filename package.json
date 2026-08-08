@@ -6,7 +6,12 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "cf:db:local": "wrangler d1 execute nazumido-db --local --file=./schema.sql",
+    "cf:db:remote": "wrangler d1 execute nazumido-db --remote --file=./schema.sql",
+    "cf:test": "wrangler deploy --dry-run --outdir=./dist-worker && node test/worker.e2e.mjs"
   },
   "keywords": [
     "express",
@@ -22,8 +27,13 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "hono": "^4.13.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^1.4.5-lts.1",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "miniflare": "^4.20260730.0",
+    "wrangler": "^4.0.0"
   }
 }
