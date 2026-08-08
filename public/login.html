@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nazumido — Admin-Login</title>
+    <link rel="stylesheet" href="/admin/admin.css" />
+  </head>
+  <body>
+    <section class="login">
+      <form id="login-form" class="login-card" novalidate>
+        <div class="logo">🎭</div>
+        <h1>Nazumido Admin</h1>
+        <p class="tag">Bitte melde dich an, um fortzufahren</p>
+
+        <div id="login-error" class="err" hidden></div>
+
+        <div class="field">
+          <label for="username">Benutzername</label>
+          <input id="username" name="username" type="text" autocomplete="username" required autofocus />
+        </div>
+        <div class="field">
+          <label for="password">Passwort</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+
+        <button id="login-submit" type="submit" class="btn block">🔑 Anmelden</button>
+        <p class="hint">Standard (Entwicklung): <code>admin</code> / <code>nazumido</code></p>
+      </form>
+    </section>
+
+    <script>
+      (function () {
+        'use strict';
+
+        var API = '/api';
+        var TOKEN_KEY = 'nazumido_admin_token';
+        var NAME_KEY = 'nazumido_admin_name';
+        var THEME_KEY = 'nazumido_admin_theme';
+        var DASHBOARD_URL = '/admin';
+
+        // Gespeichertes Theme anwenden, damit die Login-Seite optisch zum
+        // Dashboard passt (kein Hell/Dunkel-Flackern beim Wechsel).
+        if (localStorage.getItem(THEME_KEY) === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+
+        // Bereits angemeldet? Direkt ins Dashboard.
+        if (localStorage.getItem(TOKEN_KEY)) {
+          window.location.replace(DASHBOARD_URL);
+          return;
+        }
+
+        var form = document.getElementById('login-form');
+        var errorBox = document.getElementById('login-error');
+        var submitBtn = document.getElementById('login-submit');
+
+        function showError(msg) {
+          errorBox.textContent = msg;
+          errorBox.hidden = false;
+        }
+
+        form.addEventListener('submit', async function (ev) {
+          ev.preventDefault();
+          errorBox.hidden = true;
+
+          var username = document.getElementById('username').value.trim();
+          var password = document.getElementById('password').value;
+
+          if (!username || !password) {
+            showError('Bitte Benutzername und Passwort eingeben.');
+            return;
+          }
+
+          // Loading-State während des API-Calls
+          submitBtn.disabled = true;
+          var originalText = submitBtn.textContent;
+          submitBtn.textContent = '⏳ Anmeldung läuft …';
+
+          try {
+            var res = await fetch(API + '/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: username, password: password }),
+            });
+
+            var isJson = (res.headers.get('content-type') || '').includes('application/json');
+            var data = isJson ? await res.json() : null;
+
+            if (!res.ok) {
+              throw new Error((data && data.error) || 'Anmeldung fehlgeschlagen (HTTP ' + res.status + ')');
+            }
+
+            // Token + Anzeigename speichern und ins Dashboard wechseln.
+            localStorage.setItem(TOKEN_KEY, data.token);
+            if (data.admin && data.admin.username) {
+              localStorage.setItem(NAME_KEY, data.admin.username);
+            }
+            window.location.replace(DASHBOARD_URL);
+          } catch (e) {
+            // Netzwerkfehler bzw. Server nicht erreichbar sauber abfangen
+            var msg = e && e.message ? e.message : 'Unbekannter Fehler';
+            if (e instanceof TypeError) {
+              msg = 'Server nicht erreichbar. Bitte Verbindung prüfen.';
+            }
+            showError(msg);
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
