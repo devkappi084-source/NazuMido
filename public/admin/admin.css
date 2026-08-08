@@ -1,0 +1,156 @@
+/* admin.css — Styles für das Nazumido Admin-Panel */
+
+:root {
+  --red: #c8202c;
+  --red-deep: #9c1822;
+  --green: #1e6e3f;
+  --gold: #c9a24b;
+  --ink: #16140f;
+  --muted: #7c7363;
+  --paper: #fbf8f2;
+  --cream: #f7f1e6;
+  --line: rgba(22, 20, 15, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.topbar {
+  background: var(--ink);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+}
+.topbar h1 { margin: 0; font-size: 1.25rem; }
+.topbar .back { color: var(--gold); text-decoration: none; font-size: 0.9rem; }
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1.5rem;
+  background: var(--cream);
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  border: none;
+  background: none;
+  padding: 0.9rem 1.1rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 3px solid transparent;
+}
+.tab.active { color: var(--ink); border-bottom-color: var(--red); font-weight: 600; }
+
+main { max-width: 860px; margin: 0 auto; padding: 1.5rem; }
+
+.tabpanel { display: none; }
+.tabpanel.active { display: block; }
+
+h2 { font-size: 1.15rem; margin: 1.5rem 0 0.75rem; }
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.row > label { flex: 1 1 200px; }
+
+label { display: flex; flex-direction: column; font-size: 0.85rem; gap: 0.3rem; color: var(--muted); }
+label.check { flex-direction: row; align-items: center; gap: 0.5rem; }
+
+input, select, textarea {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+}
+input[type="checkbox"] { width: auto; }
+textarea { resize: vertical; }
+
+button {
+  align-self: flex-start;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.3rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+button:hover { background: var(--red-deep); }
+
+.list { display: flex; flex-direction: column; gap: 0.6rem; }
+.item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.8rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.item .meta { font-size: 0.8rem; color: var(--muted); }
+.item h3 { margin: 0 0 0.2rem; font-size: 1rem; }
+.item .del {
+  background: none;
+  color: var(--red);
+  border: 1px solid var(--red);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.item .del:hover { background: var(--red); color: #fff; }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; }
+.gallery figure { margin: 0; position: relative; }
+.gallery img { width: 100%; height: 130px; object-fit: cover; border-radius: 8px; display: block; }
+.gallery .del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(200%);
+  background: var(--ink);
+  color: #fff;
+  padding: 0.7rem 1.2rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  transition: transform 0.3s ease;
+  z-index: 50;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--red-deep); }
+
+.empty { color: var(--muted); font-style: italic; }

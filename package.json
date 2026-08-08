@@ -1,0 +1,27 @@
+{
+  "name": "nazumido-server",
+  "version": "1.0.0",
+  "description": "Node.js + Express Backend für die Faschingsverein-Website Nazumido",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "express",
+    "faschingsverein",
+    "nazumido",
+    "sqlite"
+  ],
+  "author": "Nazumido",
+  "license": "MIT",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "sqlite3": "^5.1.7"
+  }
+}

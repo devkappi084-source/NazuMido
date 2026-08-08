@@ -1,6 +1,5 @@
 node_modules/
 package-lock.json
-package.json
 
 # wrangler files
 .wrangler
@@ -8,3 +7,11 @@ package.json
 !.dev.vars.example
 .env*
 !.env.example
+
+# Node / Express Server
+db/*.sqlite
+db/*.sqlite-journal
+
+# Hochgeladene Fotos (Ordner bleibt via .gitkeep erhalten)
+uploads/*
+!uploads/.gitkeep
