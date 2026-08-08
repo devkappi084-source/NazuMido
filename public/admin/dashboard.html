@@ -3,75 +3,187 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nazumido — Admin-Panel</title>
+    <title>Nazumido — Admin-Dashboard</title>
     <link rel="stylesheet" href="/admin/admin.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>Nazumido Admin</h1>
-      <div class="topbar-actions">
-        <a class="back" href="/">← Zur Website</a>
-        <button id="logout" class="linkbtn" hidden>Abmelden</button>
-      </div>
-    </header>
-
-    <!-- LOGIN -->
+    <!-- ================= LOGIN ================= -->
     <section id="login-view" class="login">
-      <form id="login-form" class="card login-card">
-        <h2>Anmeldung</h2>
-        <label>Benutzername <input name="username" autocomplete="username" required /></label>
-        <label>Passwort <input name="password" type="password" autocomplete="current-password" required /></label>
-        <button type="submit">Anmelden</button>
+      <form id="login-form" class="login-card">
+        <div class="logo">🎭</div>
+        <h1>Nazumido Admin</h1>
+        <p class="tag">Bitte melde dich an, um fortzufahren</p>
+        <div id="login-error" class="err" hidden></div>
+        <div class="field">
+          <label for="username">Benutzername</label>
+          <input id="username" name="username" type="text" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">Passwort</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn block">🔑 Anmelden</button>
         <p class="hint">Standard (Entwicklung): <code>admin</code> / <code>nazumido</code></p>
       </form>
     </section>
 
-    <!-- APP (nach Login) -->
+    <!-- ================= APP (nach Login) ================= -->
     <div id="app-view" hidden>
-      <nav class="tabs">
-        <button class="tab active" data-tab="posts">Beiträge</button>
-        <button class="tab" data-tab="settings">Einstellungen</button>
-      </nav>
+      <!-- Header -->
+      <header class="appbar">
+        <div class="brand">
+          <span class="mark">🎭</span>
+          <span>Nazumido<small>Admin-Dashboard</small></span>
+        </div>
+        <span class="spacer"></span>
+        <button id="theme-toggle" class="iconbtn" title="Dark Mode umschalten" aria-label="Dark Mode umschalten">🌙</button>
+        <a class="iconbtn" href="/" title="Zur Website" aria-label="Zur Website">🌐</a>
+        <div class="user">
+          <span class="avatar" id="user-avatar">A</span>
+          <span class="uname" id="user-name">admin</span>
+        </div>
+      </header>
 
-      <main>
-        <!-- POSTS -->
-        <section id="tab-posts" class="tabpanel active">
-          <h2 id="post-form-title">Beitrag anlegen</h2>
-          <form id="post-form" class="card">
-            <input type="hidden" name="id" />
-            <label>Titel <input name="title" required /></label>
-            <label>Inhalt <textarea name="content" rows="4"></textarea></label>
-            <label>Foto (optional)
-              <input name="photo" type="file" accept="image/*" />
-            </label>
-            <label>Foto-URL
-              <input name="photo_url" placeholder="wird beim Hochladen automatisch gesetzt" />
-            </label>
-            <label class="check">
-              <input type="checkbox" name="is_active" checked /> Aktiv (öffentlich sichtbar)
-            </label>
-            <div class="btnrow">
-              <button type="submit">Speichern</button>
-              <button type="button" id="post-cancel" class="ghost" hidden>Abbrechen</button>
+      <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <span class="nav-label">Verwaltung</span>
+          <button class="navitem active" data-view="posts">
+            <span class="ico">📝</span> Beiträge
+          </button>
+          <button class="navitem" data-view="settings">
+            <span class="ico">⚙️</span> Einstellungen
+          </button>
+          <div class="sep"></div>
+          <button class="navitem logout" id="logout-btn">
+            <span class="ico">🚪</span> Abmelden
+          </button>
+          <div class="foot">Faschingsverein Nazumido<br />seit 1962 · Micheldorf, OÖ</div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="content">
+          <!-- ---------- Beiträge ---------- -->
+          <section id="view-posts" class="view active">
+            <div class="view-head">
+              <div>
+                <h2>Beiträge</h2>
+                <div class="sub">Neuigkeiten verwalten, bearbeiten und veröffentlichen</div>
+              </div>
+              <button id="new-post" class="btn">➕ Neuer Beitrag</button>
+            </div>
+            <div id="post-list" class="post-list"></div>
+          </section>
+
+          <!-- ---------- Einstellungen ---------- -->
+          <section id="view-settings" class="view">
+            <div class="view-head">
+              <div>
+                <h2>Einstellungen</h2>
+                <div class="sub">Vereinsdaten und Erscheinungsbild der Website</div>
+              </div>
+            </div>
+
+            <form id="settings-form" class="card">
+              <div class="field">
+                <label for="s-vereinsname">Vereinsname</label>
+                <input id="s-vereinsname" name="vereinsname" type="text" />
+              </div>
+
+              <div class="field">
+                <label for="s-beschreibung">Beschreibung</label>
+                <textarea id="s-beschreibung" name="beschreibung" rows="3"></textarea>
+              </div>
+
+              <div class="field">
+                <label>Logo</label>
+                <div class="uploader">
+                  <div class="preview logo" id="logo-preview">🎭</div>
+                  <div class="upload-btns">
+                    <button type="button" class="btn ghost" id="logo-pick">📤 Logo hochladen</button>
+                    <span class="hint">JPEG, PNG, WebP oder GIF · max. 5 MB</span>
+                  </div>
+                  <input id="logo-file" type="file" accept="image/*" />
+                  <input id="s-logo_url" name="logo_url" type="hidden" />
+                </div>
+              </div>
+
+              <div class="field-grid">
+                <div class="field">
+                  <label for="s-email">E-Mail</label>
+                  <input id="s-email" name="email" type="email" />
+                </div>
+                <div class="field">
+                  <label for="s-telefon">Telefon</label>
+                  <input id="s-telefon" name="telefon" type="text" />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="s-adresse">Adresse</label>
+                <input id="s-adresse" name="adresse" type="text" />
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn">💾 Speichern</button>
+              </div>
+            </form>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <!-- ================= MODAL: Beitrag ================= -->
+    <div id="post-modal" class="modal-back">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+          <h3 id="modal-title">Neuer Beitrag</h3>
+          <button type="button" class="x" id="modal-close" aria-label="Schließen">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="post-form">
+            <input type="hidden" id="p-id" />
+            <div class="field">
+              <label for="p-title">Titel</label>
+              <input id="p-title" name="title" type="text" required />
+            </div>
+            <div class="field">
+              <label for="p-content">Inhalt</label>
+              <textarea id="p-content" name="content" rows="5"></textarea>
+            </div>
+            <div class="field">
+              <label>Foto</label>
+              <div class="uploader">
+                <div class="preview" id="photo-preview">🖼️</div>
+                <div class="upload-btns">
+                  <button type="button" class="btn ghost" id="photo-pick">📤 Foto wählen</button>
+                  <button type="button" class="btn ghost" id="photo-clear" hidden>🗑️ Entfernen</button>
+                  <span class="hint">Wird beim Speichern hochgeladen</span>
+                </div>
+                <input id="photo-file" type="file" accept="image/*" />
+                <input id="p-photo_url" type="hidden" />
+              </div>
+            </div>
+            <div class="field">
+              <label>Status</label>
+              <div class="toggle">
+                <label class="switch">
+                  <input id="p-active" type="checkbox" checked />
+                  <span class="track"></span>
+                </label>
+                <span class="state" id="p-active-label">
+                  Veröffentlicht
+                  <small>Für alle Besucher sichtbar</small>
+                </span>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn ghost" id="modal-cancel">Abbrechen</button>
+              <button type="submit" class="btn">💾 Speichern</button>
             </div>
           </form>
-
-          <h2>Bestehende Beiträge</h2>
-          <div id="post-list" class="list"></div>
-        </section>
-
-        <!-- SETTINGS -->
-        <section id="tab-settings" class="tabpanel">
-          <h2>Website-Einstellungen</h2>
-          <form id="settings-form" class="card">
-            <div id="settings-fields"></div>
-            <div class="btnrow">
-              <button type="submit">Speichern</button>
-              <button type="button" id="settings-add" class="ghost">+ Feld hinzufügen</button>
-            </div>
-          </form>
-        </section>
-      </main>
+        </div>
+      </div>
     </div>
 
     <div id="toast" class="toast"></div>
