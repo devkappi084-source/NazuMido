@@ -13,21 +13,27 @@ npx wrangler deploy        # deploy to Cloudflare Workers (app name: nazumido2)
 npx wrangler dev           # local dev server on http://localhost:8787
 ```
 
-There is no build step — the site runs directly in the browser via CDN-hosted React 18.3.1 + Babel standalone 7.29.0. Open `index.html` (or `Nazumido.html`, they are identical) in a browser or use `wrangler dev` to preview.
+There is no build step — the site runs directly in the browser via CDN-hosted React 18.3.1 + Babel standalone 7.29.0. Open `public/index.html` (or `public/Nazumido.html`, they are identical) in a browser or use `wrangler dev` to preview.
 
-The `wrangler.toml` serves the entire repo root directory as static assets (`directory = "."`).
+The `wrangler.toml` serves the `public/` directory as static assets (`directory = "./public"`). **Everything the browser loads must live under `public/`** — files in the repo root are never served. The Worker (`src/worker.js`) only handles paths with no matching file: `/api/*`, `/uploads/*`, `/admin`.
+
+The three CDN `<script>` tags carry Subresource-Integrity hashes. Bumping React or Babel means recomputing them, otherwise the browser refuses the script and the page stays blank.
 
 ## File structure
 
 ```
-index.html / Nazumido.html  — Entry point (identical files); loads CDN scripts + .jsx files
-styles.css                  — All CSS, including CSS variables
-data.jsx                    — All static content (single source of truth)
-components.jsx              — Shared UI components
-pages-detail.jsx            — Sub-page components
-auth.jsx                    — Auth hook + login/register + member dashboard
-app.jsx                     — Root App component, routing
-assets/                     — logo.png, garde.png, guggenmusik.png, plus photos
+public/                     — everything served to the browser
+  index.html / Nazumido.html  — Entry point (identical); loads CDN scripts + .jsx files
+  styles.css                  — All CSS, including CSS variables
+  data.jsx                    — All static content (single source of truth)
+  components.jsx              — Shared UI components
+  pages-detail.jsx            — Sub-page components
+  auth.jsx                    — Auth hook + login/register + member dashboard
+  admin.jsx                   — localStorage-backed admin panel (#admin route)
+  app.jsx                     — Root App component, routing
+  assets/                     — logo.png (Wappen), garde.png, guggenmusik.png, plus photos
+  login.html, admin/          — separate Worker-backed admin UI (D1), served at /login and /admin
+src/worker.js               — Cloudflare Worker: API, D1, R2
 wrangler.toml               — Cloudflare Workers config
 ```
 
