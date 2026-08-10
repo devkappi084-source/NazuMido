@@ -316,7 +316,7 @@ function QuickPhotos({ onSave }) {
                 <Fld label="Datum"><input value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={S.inp} placeholder="Feb 2026" /></Fld>
                 <Fld label="Gruppe">
                   <select value={form.group} onChange={e => setForm({...form, group: e.target.value})} style={S.inp}>
-                    {['Garde','Musikzug','Vorsitz','Allgemein'].map(g => <option key={g}>{g}</option>)}
+                    {['Garde','Musikzug','Präsidium','Allgemein'].map(g => <option key={g}>{g}</option>)}
                   </select>
                 </Fld>
                 <Fld label="Bilddatei (Pfad)">
@@ -512,7 +512,7 @@ function AdvPeople({ onSave }) {
     setItems(next); saveData('PEOPLE', next); onSave('Person gelöscht');
   };
   const add = () => {
-    const p = { id: uid(), initial: '?', name: 'Neue Person', role: '', group: 'Vorsitz', dotColor: 'red', bio: '', contact: '' };
+    const p = { id: uid(), initial: '?', name: 'Neue Person', role: '', group: 'Präsidium', dotColor: 'red', bio: '', contact: '' };
     setItems([...items, p]); setOpen(p.id); setForm({...p});
   };
 
@@ -532,7 +532,7 @@ function AdvPeople({ onSave }) {
                   <Fld label="Rolle / Funktion"><input value={form.role} onChange={e=>setForm({...form,role:e.target.value})} style={S.inp} /></Fld>
                   <Fld label="Gruppe">
                     <select value={form.group} onChange={e=>setForm({...form,group:e.target.value})} style={S.inp}>
-                      <option>Vorsitz</option><option>Garde</option><option>Musikzug</option>
+                      <option>Präsidium</option><option>Garde</option><option>Musikzug</option>
                     </select>
                   </Fld>
                   <Fld label="Farbe">
@@ -575,7 +575,7 @@ function AdvPeople({ onSave }) {
   );
 }
 
-// Gruppen-Details (Garde / Musikzug / Vorsitz)
+// Gruppen-Details (Garde / Musikzug / Präsidium)
 function AdvGruppen({ onSave }) {
   const [tab, setTab] = useAdmSt('garde');
   const [garde,    setGarde]    = useAdmSt(() => loadData('GARDE'));
@@ -585,7 +585,7 @@ function AdvGruppen({ onSave }) {
   return (
     <div>
       <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-        {[['garde','💃 Garde'],['musikzug','🎺 Musikzug'],['vorsitz','🏛 Vorsitz']].map(([id,label]) => (
+        {[['garde','💃 Garde'],['musikzug','🎺 Musikzug'],['vorsitz','🏛 Präsidium']].map(([id,label]) => (
           <Chip key={id} active={tab===id} onClick={()=>setTab(id)}>{label}</Chip>
         ))}
       </div>
@@ -686,7 +686,7 @@ function AdvGruppen({ onSave }) {
               fields={[{key:'year',placeholder:'Jahr'},{key:'text',placeholder:'Text',flex:4}]}
               addLabel="Eintrag" />
           </div>
-          <AB onClick={()=>{saveData('VORSITZ',vorsitz);onSave('Vorsitz gespeichert');}}>Vorsitz speichern</AB>
+          <AB onClick={()=>{saveData('VORSITZ',vorsitz);onSave('Präsidium gespeichert');}}>Präsidium speichern</AB>
         </div>
       )}
     </div>

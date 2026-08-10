@@ -1,4 +1,4 @@
-// Detail pages: Garde, Musikzug, Vorsitz, Sponsoren
+// Detail pages: Garde, Musikzug, Präsidium, Sponsoren
 const { useState: useStateD } = React;
 
 // ---------- Shared subhero ----------
@@ -96,17 +96,17 @@ function GardePage({ navigate, onOpenPhoto }) {
         <div className="container">
           <div className="section-head">
             <div>
-              <span className="eyebrow">Untergruppen</span>
+              <span className="eyebrow">Unsere Garde</span>
               <h2 style={{ marginTop: 14, fontSize: 'clamp(36px, 5vw, 72px)' }}>
-                Drei <span className="italic" style={{color:'var(--green)'}}>Generationen</span>
+                Die <span className="italic" style={{color:'var(--green)'}}>Showgrafen</span>
               </h2>
             </div>
             <p className="lead">
-              Vom Kindergartenalter bis zur Hauptgarde — bei uns wachsen
-              Talente Schritt für Schritt in die große Bühne hinein.
+              Eine eingespielte Truppe, ein gemeinsames Ziel: die große Bühne.
+              Pailletten, Präzision und pure Energie — das sind unsere Showgrafen.
             </p>
           </div>
-          <div className="subgroup-grid">
+          <div className="subgroup-grid" style={d.groups.length === 1 ? { gridTemplateColumns: '1fr', maxWidth: 520, margin: '0 auto' } : null}>
             {d.groups.map((g, i) => (
               <div key={i} className={"subgroup-card " + g.color}>
                 <div className="dot"></div>
@@ -128,7 +128,7 @@ function GardePage({ navigate, onOpenPhoto }) {
                 Schritt für <span className="italic" style={{color:'var(--red)'}}>Schritt</span>
               </h2>
               <p style={{ marginTop: 22, color: 'var(--ink-2)' }}>
-                Vier Trainingseinheiten pro Woche. Choreografien, Technik,
+                Zwei Trainingseinheiten pro Woche. Choreografien, Technik,
                 Sprungkraft, Ausdruck — und jede Menge Spaß.
               </p>
               <table className="schedule-table" style={{ marginTop: 28 }}>
@@ -176,7 +176,7 @@ function GardePage({ navigate, onOpenPhoto }) {
             Lust auf das <span className="italic" style={{color:'var(--red)'}}>Rampenlicht</span>?
           </h2>
           <p style={{ maxWidth: 560, margin: '20px auto 30px', color: 'rgba(247,241,230,0.8)' }}>
-            Wir freuen uns über tanzfreudigen Nachwuchs in allen Altersgruppen.
+            Wir freuen uns über tanzfreudigen Nachwuchs bei den Showgrafen.
             Komm einfach unverbindlich zu einem Probetraining vorbei.
           </p>
           <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -294,16 +294,16 @@ function MusikzugPage({ navigate, onOpenPhoto }) {
   );
 }
 
-// ---------- Vorsitz Page ----------
+// ---------- Präsidium Page ----------
 function VorsitzPage({ navigate, onOpenPhoto }) {
   const d = VORSITZ;
   return (
     <>
       <SubHero
         navigate={navigate}
-        breadcrumb="Vorsitz"
+        breadcrumb="Präsidium"
         kicker="Gruppe · Repräsentation"
-        title={<>Der <span style={{color:'var(--red)', fontStyle:'italic'}}>Vorsitz</span></>}
+        title={<>Das <span style={{color:'var(--red)', fontStyle:'italic'}}>Präsidium</span></>}
         tagline={d.tagline}
         facts={[
           { label: 'Gegründet', value: d.founded },
@@ -323,7 +323,7 @@ function VorsitzPage({ navigate, onOpenPhoto }) {
               </h2>
               <p style={{ marginTop: 22, color: 'var(--ink-2)' }}>
                 Hinter jeder gelungenen Veranstaltung steckt ein Stück
-                Organisation. Das sind die Bereiche, die der Vorsitz abdeckt:
+                Organisation. Das sind die Bereiche, die das Präsidium abdeckt:
               </p>
               <ol className="responsibility-list" style={{ marginTop: 22 }}>
                 {d.responsibilities.map((r, i) => <li key={i}><span>{r}</span></li>)}
@@ -381,7 +381,7 @@ function VorsitzPage({ navigate, onOpenPhoto }) {
         </div>
       </section>
 
-      <GroupPhotos group="Vorsitz" onOpen={onOpenPhoto} />
+      <GroupPhotos group="Präsidium" onOpen={onOpenPhoto} />
     </>
   );
 }

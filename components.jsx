@@ -6,7 +6,7 @@ function TopBar({ route, navigate, user, onLogout }) {
     { id: 'home', label: 'Start' },
     { id: 'garde', label: 'Garde' },
     { id: 'musikzug', label: 'Musikzug' },
-    { id: 'vorsitz', label: 'Vorsitz' },
+    { id: 'vorsitz', label: 'Präsidium' },
     { id: 'sponsoren', label: 'Sponsoren' },
   ];
   const strip = SITE_CONFIG.topbarStrip;
@@ -418,7 +418,7 @@ function NewsletterBlock() {
   const [topics, setTopics] = useState(['Events', 'Garde']);
   const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState({ first: '', last: '', email: '', kind: 'Fan / Interessent' });
-  const allTopics = ['Events', 'Garde', 'Musikzug', 'Vorsitz', 'Mitgliedschaft'];
+  const allTopics = ['Events', 'Garde', 'Musikzug', 'Präsidium', 'Mitgliedschaft'];
   const toggle = t => setTopics(topics.includes(t) ? topics.filter(x => x !== t) : [...topics, t]);
 
   const submit = (e) => {
@@ -538,7 +538,7 @@ function Footer({ navigate }) {
             <ul>
               <li><a href="#garde" onClick={link('garde')}>Garde</a></li>
               <li><a href="#musikzug" onClick={link('musikzug')}>Musikzug</a></li>
-              <li><a href="#vorsitz" onClick={link('vorsitz')}>Vorsitz</a></li>
+              <li><a href="#vorsitz" onClick={link('vorsitz')}>Präsidium</a></li>
               <li><a href="#sponsoren" onClick={link('sponsoren')}>Sponsoren</a></li>
             </ul>
           </div>
