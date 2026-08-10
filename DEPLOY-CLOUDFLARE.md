@@ -86,10 +86,11 @@ npx wrangler secret put ADMIN_PASSWORD
 Der Benutzername steht als nicht-geheime Variable `ADMIN_USERNAME` in der
 `wrangler.toml` (Standard: `admin`).
 
-> **Wichtig:** `ADMIN_PASSWORD` wirkt nur beim allerersten Login, wenn noch kein
-> Admin in der D1-Datenbank existiert. Möchtest du das Passwort später ändern,
-> lösche den Datensatz in D1 (`DELETE FROM admins;`) — beim nächsten Login wird
-> der Admin mit dem aktuellen `ADMIN_PASSWORD` neu angelegt.
+> **Wichtig:** `ADMIN_PASSWORD` ist die maßgebliche Quelle für das Admin-Passwort.
+> Beim Login gleicht der Worker den gespeicherten Hash damit ab und aktualisiert
+> ihn bei Bedarf — ein nachträglich geändertes Secret wirkt also sofort, ganz ohne
+> `DELETE FROM admins;`. Ist gar kein `ADMIN_PASSWORD` gesetzt, wird der Admin
+> beim ersten Login mit dem Notfall-Standard `nazumido` angelegt.
 
 ---
 
@@ -191,6 +192,11 @@ Ab jetzt deployt Cloudflare bei jeder Repo-Änderung automatisch neu.
 - **`D1_ERROR: no such table`** → Schema vergessen: `npm run cf:db:remote` ausführen.
 - **Login schlägt fehl / „Ungültiges Token"** → `JWT_SECRET` nicht als Secret
   gesetzt. Nach dem Setzen erneut `npm run cf:deploy`.
+- **Login meldet „JWT_SECRET ist im Worker nicht gesetzt"** → das Secret kommt zur
+  Laufzeit nicht an. `https://<deine-domain>/api/health` im Browser öffnen: unter
+  `bindings` müssen `DB`, `BUCKET`, `ASSETS` und `JWT_SECRET` auftauchen. Fehlt
+  `JWT_SECRET` dort, obwohl es im Dashboard steht, läuft noch eine ältere
+  Worker-Version — neu deployen.
 - **Foto-Upload-Fehler** → R2-Bucket nicht angelegt oder R2 im Konto nicht aktiviert.
 - **Bilder werden nicht angezeigt** → sie liegen jetzt in R2 und werden vom Worker
   unter `/uploads/<key>` ausgeliefert; alte lokale `/uploads`-Dateien existieren dort nicht.
