@@ -303,7 +303,7 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                   <span>Musikzug-Bereich</span><span>→</span>
                 </button>
                 <button className="btn outline-dark" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('vorsitz')}>
-                  <span>Vorsitz-Bereich</span><span>→</span>
+                  <span>Präsidium-Bereich</span><span>→</span>
                 </button>
                 <button className="btn outline-dark" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('sponsoren')}>
                   <span>Sponsorenübersicht</span><span>→</span>

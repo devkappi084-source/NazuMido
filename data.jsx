@@ -144,21 +144,21 @@ const GROUPS = [
     id: 'vorsitz',
     kicker: 'Repräsentation · 11 Aktive',
     kickerColor: 'green',
-    title: 'Vorsitz',
-    desc: 'Tradition trifft Schalk: Der Vorsitz führt durch jede Veranstaltung mit Witz, Würde und einem Schluck Bier.',
+    title: 'Präsidium',
+    desc: 'Tradition trifft Schalk: Das Präsidium führt durch jede Veranstaltung mit Witz, Würde und einem Schluck Bier.',
     stats: ['Gegründet 1962', 'Sitzung 1× im Monat'],
-    placeholder: 'Foto Vorsitz',
+    placeholder: 'Foto Präsidium',
   },
 ];
 
 const PEOPLE = [
-  { id: 'p1', initial: 'B', name: 'Johann Bloderer', role: 'Präsident', group: 'Vorsitz', dotColor: 'red', bio: 'Offizieller Botschafter für die 5. Jahreszeit und Präsident des Vereins.', contact: 'praesident@nazu-mido.at', phone: '+43 664 9233429' },
-  { id: 'p2', initial: 'T', name: 'Tamara Schubert', role: 'Vizepräsidentin', group: 'Vorsitz', dotColor: 'green', bio: 'Offizielle Botschafterin für die 5. Jahreszeit und Vizepräsidentin des Vereins.', contact: 'Nazu.Mido@gmx.at' },
+  { id: 'p1', initial: 'B', name: 'Johann Bloderer', role: 'Präsident', group: 'Präsidium', dotColor: 'red', bio: 'Offizieller Botschafter für die 5. Jahreszeit und Präsident des Vereins.', contact: 'praesident@nazu-mido.at', phone: '+43 664 9233429' },
+  { id: 'p2', initial: 'T', name: 'Tamara Schubert', role: 'Vizepräsidentin', group: 'Präsidium', dotColor: 'green', bio: 'Offizielle Botschafterin für die 5. Jahreszeit und Vizepräsidentin des Vereins.', contact: 'Nazu.Mido@gmx.at' },
   { id: 'p3', initial: 'K', name: 'Karin Schober', role: 'Trainerin Garde', group: 'Garde', dotColor: 'red', bio: 'Choreografin, Motivatorin, Tanzpädagogin. Erfolg sei "Disziplin mit Glitzer".', contact: 'garde@nazumido.at' },
   { id: 'p4', initial: 'F', name: 'Franz Huber', role: 'Kapellmeister', group: 'Musikzug', dotColor: 'gold', bio: 'Seit 18 Jahren am Taktstock. Schiefer als seine Trompeten ist nur sein Humor.', contact: 'musik@nazumido.at' },
-  { id: 'p5', initial: 'T', name: 'Tom Weidinger', role: 'Kassier', group: 'Vorsitz', dotColor: 'green', bio: 'Zählt Krapfen, Mitgliedsbeiträge und Bierdeckel mit gleicher Akribie.', contact: 'kasse@nazumido.at' },
-  { id: 'p6', initial: 'S', name: 'Sabine Mayer', role: 'Schriftführerin', group: 'Vorsitz', dotColor: 'red', bio: 'Schreibt das Protokoll schneller, als der Präsident sprechen kann.', contact: 'office@nazumido.at' },
-  { id: 'p7', initial: 'O', name: 'Otto Pichler', role: 'Hofnarr', group: 'Vorsitz', dotColor: 'gold', bio: 'Der heimliche Star jeder Veranstaltung. Punschausschank inklusive.', contact: '—' },
+  { id: 'p5', initial: 'T', name: 'Tom Weidinger', role: 'Kassier', group: 'Präsidium', dotColor: 'green', bio: 'Zählt Krapfen, Mitgliedsbeiträge und Bierdeckel mit gleicher Akribie.', contact: 'kasse@nazumido.at' },
+  { id: 'p6', initial: 'S', name: 'Sabine Mayer', role: 'Schriftführerin', group: 'Präsidium', dotColor: 'red', bio: 'Schreibt das Protokoll schneller, als der Präsident sprechen kann.', contact: 'office@nazumido.at' },
+  { id: 'p7', initial: 'O', name: 'Otto Pichler', role: 'Hofnarr', group: 'Präsidium', dotColor: 'gold', bio: 'Der heimliche Star jeder Veranstaltung. Punschausschank inklusive.', contact: '—' },
   { id: 'p8', initial: 'L', name: 'Lisa Eder', role: 'Jugendreferentin', group: 'Garde', dotColor: 'green', bio: 'Bringt die Mini-Garde zum Strahlen und die Eltern zum Schwitzen.', contact: 'jugend@nazumido.at' },
 ];
 
@@ -173,9 +173,7 @@ const GARDE = {
   practice: 'Mo & Do · 18:30 — 20:00 · Turnsaal Volksschule',
   trainer: 'Karin Schober & Lisa Eder',
   groups: [
-    { name: 'Hauptgarde', age: '16+', count: 8, color: 'red' },
-    { name: 'Juniorgarde', age: '11—15', count: 6, color: 'green' },
-    { name: 'Mini-Garde', age: '6—10', count: 9, color: 'gold' },
+    { name: 'Showgrafen', age: '16+', count: 14, color: 'red' },
   ],
   highlights: [
     { year: '2025', text: 'Erster Platz beim Bezirkstanzfest Steyr' },
@@ -184,10 +182,8 @@ const GARDE = {
     { year: '1998', text: 'Gründung der Garde durch Karin Schober' },
   ],
   schedule: [
-    { d: 'Mo', t: '18:30', what: 'Hauptgarde — Choreografie' },
-    { d: 'Mi', t: '17:00', what: 'Juniorgarde — Technik' },
-    { d: 'Do', t: '16:30', what: 'Mini-Garde — Spiel & Bewegung' },
-    { d: 'Do', t: '18:30', what: 'Hauptgarde — Hebefiguren' },
+    { d: 'Mo', t: '18:30', what: 'Showgrafen — Choreografie' },
+    { d: 'Do', t: '18:30', what: 'Showgrafen — Hebefiguren' },
   ],
 };
 
@@ -219,7 +215,7 @@ const MUSIKZUG = {
 };
 
 const VORSITZ = {
-  title: 'Vorsitz',
+  title: 'Präsidium',
   tagline: 'Die Schaltzentrale: planen, repräsentieren, zusammenhalten.',
   founded: 1962,
   members: 11,
@@ -287,10 +283,10 @@ const PHOTOS = [
   { id: 'ph1', src: 'assets/garde.png', title: 'Garde am Hauptplatz', date: 'Feb 2026', group: 'Garde', size: '1024×768', hdSize: '4096×3072' },
   { id: 'ph2', src: 'assets/guggenmusik.png', title: 'Musikzug Konzert', date: 'Nov 2025', group: 'Musikzug', size: '1024×768', hdSize: '4096×3072' },
   { id: 'ph3', src: null, title: 'Faschingsumzug 2025', date: 'Feb 2025', group: 'Allgemein', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph4', src: null, title: 'Prinzenball Gala', date: 'Feb 2025', group: 'Vorsitz', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph4', src: null, title: 'Prinzenball Gala', date: 'Feb 2025', group: 'Präsidium', size: '1024×768', hdSize: '4096×3072' },
   { id: 'ph5', src: null, title: 'Mini-Garde Training', date: 'Jan 2026', group: 'Garde', size: '1024×768', hdSize: '4096×3072' },
   { id: 'ph6', src: null, title: 'Kehraus 2025', date: 'Feb 2025', group: 'Allgemein', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph7', src: null, title: 'Weihnachtsfeier', date: 'Dez 2025', group: 'Vorsitz', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph7', src: null, title: 'Weihnachtsfeier', date: 'Dez 2025', group: 'Präsidium', size: '1024×768', hdSize: '4096×3072' },
   { id: 'ph8', src: null, title: 'Landeswettbewerb', date: 'Nov 2025', group: 'Musikzug', size: '1024×768', hdSize: '4096×3072' },
 ];
 
@@ -298,7 +294,7 @@ const PHOTOS = [
 const DEMO_USERS = [
   { email: 'gast@nazumido.at', password: 'gast', name: 'Gast Mitglied', role: 'Mitglied', avatar: 'G' },
   { email: 'garde@nazumido.at', password: 'garde', name: 'Karin Schober', role: 'Trainerin', group: 'Garde', avatar: 'K' },
-  { email: 'vorstand@nazumido.at', password: 'vorstand', name: 'Markus Reiter', role: 'Vorstand', group: 'Vorsitz', avatar: 'M' },
+  { email: 'vorstand@nazumido.at', password: 'vorstand', name: 'Markus Reiter', role: 'Vorstand', group: 'Präsidium', avatar: 'M' },
 ];
 
 // ----- Interne Inhalte nach Rolle -----
