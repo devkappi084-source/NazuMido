@@ -86,14 +86,29 @@ async function verifyPassword(password, stored) {
 // ===========================================================================
 // Hilfsfunktionen: JWT
 // ===========================================================================
+// Fehlt das Secret, liefert hono/jwt sonst nur "Cannot read properties of
+// undefined (reading 'includes')" — daher hier eine verständliche Meldung.
+function requireJwtSecret(env) {
+  const secret = env.JWT_SECRET;
+  if (typeof secret !== 'string' || secret.length === 0) {
+    throw new Error(
+      'JWT_SECRET ist im Worker nicht gesetzt. Im Cloudflare-Dashboard unter ' +
+        'Workers & Pages → nazumido2 → Settings → Variables and Secrets als Secret ' +
+        'anlegen und danach neu deployen. Prüfen mit /api/health.'
+    );
+  }
+  return secret;
+}
+
 async function signToken(admin, env) {
+  const secret = requireJwtSecret(env);
   const ttl = Number(env.JWT_EXPIRES_IN) || DEFAULT_JWT_EXPIRES;
   const payload = {
     sub: admin.id,
     username: admin.username,
     exp: Math.floor(Date.now() / 1000) + ttl,
   };
-  return sign(payload, env.JWT_SECRET, 'HS256');
+  return sign(payload, secret, 'HS256');
 }
 
 // Hono-Middleware: schützt Admin-Routen per "Authorization: Bearer <token>".
@@ -104,7 +119,7 @@ async function requireAuth(c, next) {
     return c.json({ error: 'Nicht autorisiert: Bearer-Token fehlt' }, 401);
   }
   try {
-    const payload = await verify(match[1], c.env.JWT_SECRET, 'HS256');
+    const payload = await verify(match[1], requireJwtSecret(c.env), 'HS256');
     c.set('admin', { id: payload.sub, username: payload.username });
     await next();
   } catch (err) {
@@ -123,16 +138,36 @@ function db(c) {
   return c.env.DB;
 }
 
-// Legt beim ersten Login automatisch den Standard-Admin an (das Passwort muss
-// zur Laufzeit gehasht werden und kann daher nicht in schema.sql stehen).
+// Hält den Standard-Admin mit dem Secret ADMIN_PASSWORD in Einklang (das
+// Passwort muss zur Laufzeit gehasht werden und kann daher nicht in schema.sql
+// stehen):
+//
+//   • Kein Admin vorhanden  -> wird angelegt (ADMIN_PASSWORD, sonst 'nazumido').
+//   • Admin vorhanden und ADMIN_PASSWORD gesetzt, passt aber nicht zum
+//     gespeicherten Hash -> das Passwort wird auf ADMIN_PASSWORD aktualisiert.
+//
+// Dadurch wirkt ein nachträglich gesetztes/geändertes ADMIN_PASSWORD sofort;
+// vorher galt es nur beim allerersten Login.
 async function ensureAdmin(env) {
-  const row = await env.DB.prepare('SELECT COUNT(*) AS c FROM admins').first();
-  if (row && row.c === 0) {
-    const username = env.ADMIN_USERNAME || 'admin';
-    const password = env.ADMIN_PASSWORD || 'nazumido';
-    const hash = await hashPassword(password);
+  const username = env.ADMIN_USERNAME || 'admin';
+  const configured = typeof env.ADMIN_PASSWORD === 'string' ? env.ADMIN_PASSWORD : '';
+
+  const existing = await env.DB.prepare('SELECT id, password_hash FROM admins WHERE username = ?')
+    .bind(username)
+    .first();
+
+  if (!existing) {
+    const hash = await hashPassword(configured || 'nazumido');
     await env.DB.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)')
       .bind(username, hash)
+      .run();
+    return;
+  }
+
+  if (configured && !(await verifyPassword(configured, existing.password_hash))) {
+    const hash = await hashPassword(configured);
+    await env.DB.prepare('UPDATE admins SET password_hash = ? WHERE id = ?')
+      .bind(hash, existing.id)
       .run();
   }
 }
@@ -156,9 +191,21 @@ app.use(
 // ===========================================================================
 // Health / Info
 // ===========================================================================
-app.get('/api/health', (c) =>
-  c.json({ status: 'ok', service: 'nazumido-api', time: new Date().toISOString() })
-);
+// Listet NUR die Namen der vorhandenen Bindings/Variablen auf (niemals Werte).
+// Damit lässt sich im Browser prüfen, ob z. B. JWT_SECRET zur Laufzeit ankommt.
+app.get('/api/health', (c) => {
+  const bindings = {};
+  for (const key of Object.keys(c.env || {})) {
+    const val = c.env[key];
+    bindings[key] = typeof val === 'string' ? `string(${val.length})` : typeof val;
+  }
+  return c.json({
+    status: 'ok',
+    service: 'nazumido-api',
+    time: new Date().toISOString(),
+    bindings,
+  });
+});
 
 // ===========================================================================
 // ÖFFENTLICH: Beiträge (nur aktive)
