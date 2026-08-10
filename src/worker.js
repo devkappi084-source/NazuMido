@@ -191,21 +191,9 @@ app.use(
 // ===========================================================================
 // Health / Info
 // ===========================================================================
-// Listet NUR die Namen der vorhandenen Bindings/Variablen auf (niemals Werte).
-// Damit lässt sich im Browser prüfen, ob z. B. JWT_SECRET zur Laufzeit ankommt.
-app.get('/api/health', (c) => {
-  const bindings = {};
-  for (const key of Object.keys(c.env || {})) {
-    const val = c.env[key];
-    bindings[key] = typeof val === 'string' ? `string(${val.length})` : typeof val;
-  }
-  return c.json({
-    status: 'ok',
-    service: 'nazumido-api',
-    time: new Date().toISOString(),
-    bindings,
-  });
-});
+app.get('/api/health', (c) =>
+  c.json({ status: 'ok', service: 'nazumido-api', time: new Date().toISOString() })
+);
 
 // ===========================================================================
 // ÖFFENTLICH: Beiträge (nur aktive)

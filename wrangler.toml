@@ -2,12 +2,6 @@ name = "nazumido2"
 main = "src/worker.js"
 compatibility_date = "2024-09-23"
 
-# Im Dashboard gepflegte Variablen/Secrets (JWT_SECRET, ADMIN_PASSWORD) beim
-# Deploy NICHT entfernen. Ohne diesen Schalter überschreibt ein Deploy die
-# Konfiguration mit dem, was hier in der Datei steht — die Secrets fehlen dann
-# zur Laufzeit und der Login scheitert.
-keep_vars = true
-
 # ---------------------------------------------------------------------------
 # Statische Website — der Ordner public/ (Startseite, Login, Admin-Panel) wird
 # direkt von Cloudflare ausgeliefert. Der Worker läuft nur für Pfade, zu denen

@@ -193,10 +193,11 @@ Ab jetzt deployt Cloudflare bei jeder Repo-Änderung automatisch neu.
 - **Login schlägt fehl / „Ungültiges Token"** → `JWT_SECRET` nicht als Secret
   gesetzt. Nach dem Setzen erneut `npm run cf:deploy`.
 - **Login meldet „JWT_SECRET ist im Worker nicht gesetzt"** → das Secret kommt zur
-  Laufzeit nicht an. `https://<deine-domain>/api/health` im Browser öffnen: unter
-  `bindings` müssen `DB`, `BUCKET`, `ASSETS` und `JWT_SECRET` auftauchen. Fehlt
-  `JWT_SECRET` dort, obwohl es im Dashboard steht, läuft noch eine ältere
-  Worker-Version — neu deployen.
+  Laufzeit nicht an, auch wenn es im Dashboard sichtbar ist. Achtung: Im
+  Cloudflare-Dashboard gibt es **zwei** Stellen namens *Variables and Secrets*.
+  Maßgeblich für den laufenden Worker sind die **Runtime**-Variablen des Workers
+  selbst — nicht die Build-/Deploy-Variablen. Das Secret muss an der Stelle
+  liegen, die der Worker zur Laufzeit liest.
 - **Foto-Upload-Fehler** → R2-Bucket nicht angelegt oder R2 im Konto nicht aktiviert.
 - **Bilder werden nicht angezeigt** → sie liegen jetzt in R2 und werden vom Worker
   unter `/uploads/<key>` ausgeliefert; alte lokale `/uploads`-Dateien existieren dort nicht.
