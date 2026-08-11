@@ -10,17 +10,21 @@ function TopBar({ route, navigate, user, onLogout }) {
     { id: 'galerie', label: 'Galerie' },
     { id: 'sponsoren', label: 'Sponsoren' },
   ].filter(it => it.id !== 'galerie' || galleryConfig().showInNav);
-  const strip = SITE_CONFIG.topbarStrip;
+  const strip = ((window.SITE_CONFIG || SITE_CONFIG).topbarStrip || []).filter(t => String(t).trim());
+  // Laufschrift nur, wenn ein Termin ansteht (siehe Einstellungen › Laufschrift)
+  const showStrip = showTopbarStrip();
   const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <header className="topbar">
-      <div className="topbar-strip">
-        <div className="topbar-strip-track">
-          {[...strip, ...strip].map((t, i) => (
-            <span key={i}><span className={"dot" + (i % 2 ? " g" : "")}></span>{t}</span>
-          ))}
+      {showStrip && (
+        <div className="topbar-strip">
+          <div className="topbar-strip-track">
+            {[...strip, ...strip].map((t, i) => (
+              <span key={i}><span className={"dot" + (i % 2 ? " g" : "")}></span>{t}</span>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       <div className="container">
         <nav className="nav">
           <a className="nav-brand" href="#home"
