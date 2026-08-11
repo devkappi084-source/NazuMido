@@ -25,6 +25,13 @@ npm install                 # Abhängigkeiten inkl. wrangler
 npx wrangler login          # Cloudflare-Konto verbinden (öffnet den Browser)
 ```
 
+> **Hinweis zur wrangler-Version:** `wrangler` ist bewusst auf `~4.120.1`
+> gepinnt. Version 4.121.0 verlangt `miniflare@5.20260804.1-alpha`, ein Paket,
+> das gar nicht auf npm liegt — der Cloudflare-Build bricht dann schon beim
+> Installieren ab (`error: miniflare@… failed to resolve`). Erst wenn eine
+> neuere wrangler-Version wieder auf ein vorhandenes miniflare zeigt, kann der
+> Pin angehoben werden.
+
 ---
 
 ## Schritt 1 — D1-Datenbank anlegen
