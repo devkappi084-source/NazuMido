@@ -185,10 +185,19 @@ function AdminLogin({ onAuth }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENTS
 // ═══════════════════════════════════════════════════════════════════════════════
+// Steht dieser Termin noch bevor? (heute zählt als anstehend)
+function isUpcoming(ev) {
+  const at = window.eventDate ? window.eventDate(ev) : null;
+  if (!at) return false;
+  const now = new Date();
+  return at >= new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 function AdmEvents({ onSave }) {
   const [items, setItems] = useAdmSt(() => loadData('EVENTS'));
   const [open, setOpen] = useAdmSt(null);
   const [form, setForm] = useAdmSt({});
+  const upcoming = items.filter(isUpcoming).length;
 
   const edit = ev => { setOpen(ev.id); setForm({ ...ev }); };
   const save = id => {
@@ -202,7 +211,7 @@ function AdmEvents({ onSave }) {
     setItems(next); saveData('EVENTS', next); setOpen(null); onSave('Event gelöscht');
   };
   const add = () => {
-    const ev = { id: uid(), d: '01', m: 'Jan', day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '' };
+    const ev = { id: uid(), d: '01', m: 'Jan', year: String(new Date().getFullYear() + 1), day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '' };
     const next = [...items, ev];
     setItems(next); setOpen(ev.id); setForm({ ...ev });
   };
@@ -210,8 +219,8 @@ function AdmEvents({ onSave }) {
   return (
     <div>
       <PanelHead
-        title={`${items.length} Termine`}
-        desc="Alles, was im Veranstaltungskalender der Startseite erscheint."
+        title={`${items.length} Termine · ${upcoming} anstehend`}
+        desc="Alles, was im Veranstaltungskalender der Startseite erscheint. Steht kein Termin mehr an, verschwindet die Laufschrift im Kopfbereich."
         action={<Btn onClick={add}>+ Event hinzufügen</Btn>}
       />
       {items.map(ev => (
@@ -225,9 +234,15 @@ function AdmEvents({ onSave }) {
               <div className="adm-grid-3">
                 <Fld label="Tag"><Inp value={form.d} onChange={e => setForm({...form, d: e.target.value})} placeholder="14" /></Fld>
                 <Fld label="Monat"><Inp value={form.m} onChange={e => setForm({...form, m: e.target.value})} placeholder="Feb" /></Fld>
-                <Fld label="Wochentag"><Inp value={form.day} onChange={e => setForm({...form, day: e.target.value})} /></Fld>
+                <Fld label="Jahr"><Inp value={form.year || ''} onChange={e => setForm({...form, year: e.target.value})} placeholder={String(new Date().getFullYear())} /></Fld>
               </div>
-              <div className="adm-grid-2">
+              <p className="adm-card-desc" style={{ margin: '-6px 0 14px' }}>
+                {isUpcoming(form)
+                  ? '● Termin steht noch an — die Laufschrift im Kopfbereich wird angezeigt.'
+                  : '○ Termin ist vorbei. Ohne Jahresangabe gilt das laufende Jahr.'}
+              </p>
+              <div className="adm-grid-3">
+                <Fld label="Wochentag"><Inp value={form.day} onChange={e => setForm({...form, day: e.target.value})} /></Fld>
                 <Fld label="Uhrzeit"><Inp value={form.time} onChange={e => setForm({...form, time: e.target.value})} /></Fld>
                 <Fld label="Ort"><Inp value={form.where} onChange={e => setForm({...form, where: e.target.value})} /></Fld>
               </div>
@@ -975,6 +990,15 @@ function AdmInternal({ onSave }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // VEREINSINFO
 // ═══════════════════════════════════════════════════════════════════════════════
+// Zeigt an, ob die Laufschrift mit den aktuellen Terminen sichtbar wäre
+function stripPreview(cfg) {
+  const list = window.upcomingEvents ? window.upcomingEvents(cfg.topbarStripDays) : [];
+  if (!list.length) return 'Kein Termin im Zeitraum — Laufschrift bleibt ausgeblendet.';
+  const next = list[0];
+  return `${list.length} Termin${list.length > 1 ? 'e' : ''} anstehend, nächster: `
+    + `${next.title} (${next.d}. ${next.m}) — Laufschrift wird angezeigt.`;
+}
+
 function AdmInfo({ onSave }) {
   const [cfg, setCfg] = useAdmSt(() => loadData('SITE_CONFIG'));
   const f = k => ({ value: cfg[k] || '', onChange: e => setCfg({...cfg, [k]: e.target.value}) });
@@ -1010,6 +1034,25 @@ function AdmInfo({ onSave }) {
         <Txt style={{ minHeight: 110 }}
           value={(cfg.topbarStrip || []).join('\n')}
           onChange={e => setCfg({...cfg, topbarStrip: e.target.value.split('\n')})} />
+        <div style={{ marginTop: 16 }}>
+          <Toggle label="Nur bei anstehenden Terminen zeigen"
+            desc="Aus: Laufschrift läuft immer"
+            checked={cfg.topbarStripOnlyWithEvent !== false}
+            onChange={v => setCfg({...cfg, topbarStripOnlyWithEvent: v})} />
+        </div>
+        {cfg.topbarStripOnlyWithEvent !== false && (
+          <div className="adm-grid-2" style={{ marginTop: 14 }}>
+            <Fld label="Vorlauf in Tagen (0 = jeder künftige Termin)">
+              <Inp type="number" min="0" value={cfg.topbarStripDays ?? 0}
+                onChange={e => setCfg({...cfg, topbarStripDays: e.target.value})} />
+            </Fld>
+            <Fld label="Aktuell">
+              <div className="adm-card-desc" style={{ margin: '10px 0 0' }}>
+                {stripPreview(cfg)}
+              </div>
+            </Fld>
+          </div>
+        )}
       </div>
       <Btn onClick={save}>Vereinsinfo speichern</Btn>
     </div>

@@ -82,6 +82,7 @@ const EVENTS = [
     desc: 'Über 30 Gruppen, 12 Wagen, eine Stadt im Ausnahmezustand. Start am Hauptplatz, anschließend Faschingstreiben im Festzelt.',
     time: '14:00 Uhr',
     where: 'Hauptplatz Micheldorf',
+    year: 2026,
   },
   {
     id: 'e2',
@@ -91,6 +92,7 @@ const EVENTS = [
     desc: 'Großer Galaball mit Inthronisation des Prinzenpaars. Liveband, Garde-Show, Mitternachtseinlage vom Musikzug.',
     time: '19:30 Uhr',
     where: 'Festsaal Micheldorf',
+    year: 2026,
   },
   {
     id: 'e3',
@@ -100,6 +102,7 @@ const EVENTS = [
     desc: 'Letzte Runde durchs Dorf, gemeinsames Krapfen-Essen und Verbrennung der Faschings-Hex am Rathausplatz.',
     time: '17:00 Uhr',
     where: 'Rathausplatz',
+    year: 2026,
   },
   {
     id: 'e4',
@@ -109,6 +112,7 @@ const EVENTS = [
     desc: 'Jahresrückblick, Kassenbericht, Neuwahlen. Anschließend gemütlicher Ausklang bei Schnitzel und Bier.',
     time: '19:30 Uhr',
     where: 'Gasthof Hofer',
+    year: 2026,
   },
   {
     id: 'e5',
@@ -118,8 +122,52 @@ const EVENTS = [
     desc: 'Der Vorhang öffnet sich erneut: Vorstellung des neuen Prinzenpaars und Saisoneröffnung im großen Stil.',
     time: '20:11 Uhr',
     where: 'Vereinslokal',
+    year: 2026,
   },
 ];
+
+// Monatskürzel (deutsch und englisch) → Monatsindex
+const EVENT_MONTHS = {
+  jan: 0, jän: 0, jaen: 0, januar: 0, january: 0,
+  feb: 1, februar: 1, february: 1,
+  mär: 2, maer: 2, mrz: 2, mar: 2, märz: 2, march: 2,
+  apr: 3, april: 3,
+  mai: 4, may: 4,
+  jun: 5, juni: 5, june: 5,
+  jul: 6, juli: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  okt: 9, oct: 9, oktober: 9, october: 9,
+  nov: 10, november: 10,
+  dez: 11, dec: 11, dezember: 11, december: 11,
+};
+
+// Datum eines Events als Date-Objekt (Mitternacht) — null, wenn Tag oder Monat
+// nicht lesbar sind. Ohne `year` gilt das laufende Kalenderjahr, ein Termin ohne
+// Jahresangabe ist also nach seinem Datum vorbei und rutscht nicht ins Folgejahr.
+function eventDate(ev) {
+  if (!ev) return null;
+  const m = EVENT_MONTHS[String(ev.m || '').trim().toLowerCase().replace(/\.$/, '')];
+  const d = parseInt(ev.d, 10);
+  if (m === undefined || !d) return null;
+  const year = parseInt(ev.year, 10) || new Date().getFullYear();
+  return new Date(year, m, d);
+}
+
+// Alle noch bevorstehenden Termine (heute zählt als anstehend), aufsteigend.
+// `days` > 0 begrenzt auf ein Zeitfenster, 0 bedeutet „alle künftigen“.
+function upcomingEvents(days) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const limit = parseInt(days, 10) > 0
+    ? new Date(today.getFullYear(), today.getMonth(), today.getDate() + parseInt(days, 10))
+    : null;
+  return (window.EVENTS || EVENTS)
+    .map(ev => ({ ev, at: eventDate(ev) }))
+    .filter(x => x.at && x.at >= today && (!limit || x.at <= limit))
+    .sort((a, b) => a.at - b.at)
+    .map(x => x.ev);
+}
 
 const GROUPS = [
   {
@@ -429,11 +477,22 @@ const SITE_CONFIG = {
     'Mini-Garde sucht Nachwuchs',
     'Musikzug holt Bronze',
   ],
+  // Laufschrift nur zeigen, solange ein Termin bevorsteht
+  topbarStripOnlyWithEvent: true,
+  topbarStripDays: 0,   // 0 = jedes künftige Event, sonst Vorlauf in Tagen
 };
+
+// Soll die Laufschrift im Kopfbereich angezeigt werden?
+function showTopbarStrip() {
+  const cfg = window.SITE_CONFIG || SITE_CONFIG;
+  if (!(cfg.topbarStrip || []).some(t => String(t).trim())) return false;
+  if (cfg.topbarStripOnlyWithEvent === false) return true;
+  return upcomingEvents(cfg.topbarStripDays).length > 0;
+}
 
 Object.assign(window, {
   NEWS, EVENTS, GROUPS, PEOPLE, TAGS, SPONSORS, SPONSORS_TIERS,
   GARDE, MUSIKZUG, VORSITZ, PHOTOS, PHOTO_GROUPS, photoYear, photoGroups,
-  GALLERY_DEFAULTS, galleryConfig,
+  GALLERY_DEFAULTS, galleryConfig, eventDate, upcomingEvents, showTopbarStrip,
   DEMO_USERS, INTERNAL, SITE_CONFIG,
 });

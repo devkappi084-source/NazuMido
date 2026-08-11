@@ -93,7 +93,9 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 ## Data model (all in `data.jsx`)
 
 - `NEWS` — array of news articles with `id`, `tag`, `tagColor`, optional `image`, `date`, `readTime`, `title`, `excerpt`, `body[]`, optional `feature` flag
-- `EVENTS` — array with `id`, `d` (day number), `m` (month abbrev), `day` (weekday), `title`, `kind`, `desc`, `time`, `where`
+- `EVENTS` — array with `id`, `d` (day number), `m` (month abbrev), optional `year`, `day` (weekday), `title`, `kind`, `desc`, `time`, `where`
+- `eventDate(event)` / `upcomingEvents(days)` — date helpers for `EVENTS`. `eventDate` parses `d` + `m` (German or English month abbrev) with `year`, falling back to the current calendar year, so an event without a year counts as past once its date has passed. `upcomingEvents(days)` returns the future events sorted ascending, limited to the next `days` days when `days > 0`
+- `showTopbarStrip()` — whether the marquee in the `TopBar` renders. True when the strip has entries and an event is upcoming; `SITE_CONFIG.topbarStripOnlyWithEvent: false` makes it always show, `SITE_CONFIG.topbarStripDays` narrows the lead time. Both are editable in the admin under *Vereinsinfo › Laufschrift*
 - `GROUPS` — array for the three groups: Garde, Musikzug, Vorsitz (drives the home-page `GroupsBlock`)
 - `PEOPLE` — board members with `id`, `initial`, `name`, `role`, `group`, `dotColor`, `bio`, `contact`
 - `TAGS` — filter tags for `NewsFeed`
@@ -106,7 +108,7 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `photoGroups()` — current gallery groups, read from `window.PHOTO_GROUPS` so admin overrides apply
 - `GALLERY_DEFAULTS` / `galleryConfig()` — gallery settings (texts, filters, sort order, `photosPerGroup`, `hdMembersOnly`, `showInNav`, HD section). `galleryConfig()` merges the defaults with `window.SITE_CONFIG.gallery` and is the only way gallery code should read these values — never read `SITE_CONFIG.gallery` directly, or admin overrides get missed
 - `DEMO_USERS` — hardcoded login credentials (see Auth section above)
-- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip`, `gallery`)
+- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip` plus `topbarStripOnlyWithEvent` / `topbarStripDays`, `gallery`)
 - `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`
 
 ## Admin panel
