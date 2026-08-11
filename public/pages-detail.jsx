@@ -36,15 +36,27 @@ function SubHero({ kicker, title, tagline, facts, breadcrumb, navigate }) {
   );
 }
 
+// Letztes Wort einer Überschrift kursiv/farbig hervorheben
+function accentTitle(text, color) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) {
+    return <span className="italic" style={{ color }}>{words[0] || ''}</span>;
+  }
+  const last = words.pop();
+  return <>{words.join(' ')} <span className="italic" style={{ color }}>{last}</span></>;
+}
+
 // ---------- Photo Card (shared) ----------
 function PhotoCard({ photo, onOpen }) {
+  const g = galleryConfig();
+  const hdOpen = !g.hdMembersOnly || !!window.__currentUser;
   return (
     <div className="photo-card" onClick={() => onOpen(photo)}>
       {photo.src ? <img src={photo.src} alt={photo.title} /> : <div className="ph">Foto · {photo.title}</div>}
-      {photo.album && <span className="album-badge">{photo.album}</span>}
-      <span className={"hd-badge " + (window.__currentUser ? '' : 'locked')}>
+      {g.showAlbumBadge && photo.album && <span className="album-badge">{photo.album}</span>}
+      <span className={"hd-badge " + (hdOpen ? '' : 'locked')}>
         <span className="dot"></span>
-        {window.__currentUser ? 'HD verfügbar' : '🔒 HD'}
+        {hdOpen ? 'HD verfügbar' : '🔒 HD'}
       </span>
       <div className="photo-card-info">
         <div className="t">{photo.title}</div>
@@ -56,7 +68,9 @@ function PhotoCard({ photo, onOpen }) {
 
 // ---------- Photo Strip (group-specific) ----------
 function GroupPhotos({ group, onOpen, navigate }) {
-  const photos = PHOTOS.filter(p => p.group === group || group === 'Allgemein').slice(0, 8);
+  const g = galleryConfig();
+  const all = window.PHOTOS || PHOTOS;
+  const photos = all.filter(p => p.group === group || group === 'Allgemein').slice(0, g.photosPerGroup);
   if (!photos.length) return null;
   return (
     <section className="block" style={{ paddingTop: 60 }}>
@@ -67,8 +81,9 @@ function GroupPhotos({ group, onOpen, navigate }) {
             <h2 style={{ marginTop: 14, fontSize: 'clamp(36px, 4.4vw, 64px)' }}>Aus unserer <span className="italic" style={{color:'var(--red)'}}>Linse</span></h2>
           </div>
           <p className="lead">
-            Klick ein Foto an: Mitglieder können die HD-Version herunterladen,
-            Gäste bekommen die Web-Vorschau.
+            {g.hdMembersOnly
+              ? 'Klick ein Foto an: Mitglieder können die HD-Version herunterladen, Gäste bekommen die Web-Vorschau.'
+              : 'Klick ein Foto an — jede Aufnahme steht in voller Auflösung zum Download bereit.'}
           </p>
         </div>
         <div className="photo-grid">
@@ -91,15 +106,22 @@ function GaleriePage({ navigate, onOpenPhoto }) {
   const [group, setGroup] = useStateD('Alle');
   const [year, setYear] = useStateD('Alle');
 
-  const groups = ['Alle', ...(window.PHOTO_GROUPS || ['Garde', 'Musikzug', 'Präsidium', 'Allgemein'])];
-  const years = [...new Set(PHOTOS.map(photoYear).filter(Boolean))].sort((a, b) => b - a);
+  const g = galleryConfig();
+  const photos = window.PHOTOS || PHOTOS;
+  const groups = ['Alle', ...photoGroups()];
+  const years = [...new Set(photos.map(photoYear).filter(Boolean))].sort((a, b) => b - a);
 
-  const filtered = PHOTOS.filter(p =>
-    (group === 'Alle' || p.group === group) &&
-    (year === 'Alle' || photoYear(p) === year)
+  // Ausgeblendete Filter dürfen die Auswahl nicht einschränken
+  const activeGroup = g.showGroupFilter ? group : 'Alle';
+  const activeYear  = g.showYearFilter  ? year  : 'Alle';
+
+  const filtered = photos.filter(p =>
+    (activeGroup === 'Alle' || p.group === activeGroup) &&
+    (activeYear === 'Alle' || photoYear(p) === activeYear)
   );
 
-  // Nach Jahr gruppieren, neueste zuerst; Fotos ohne Jahr landen am Ende
+  // Nach Jahr gruppieren; Reihenfolge kommt aus den Galerie-Einstellungen,
+  // Fotos ohne Jahr landen am Ende
   const buckets = [];
   filtered.forEach(p => {
     const y = photoYear(p);
@@ -107,7 +129,9 @@ function GaleriePage({ navigate, onOpenPhoto }) {
     if (!b) { b = { year: y, photos: [] }; buckets.push(b); }
     b.photos.push(p);
   });
-  buckets.sort((a, b) => (b.year || 0) - (a.year || 0));
+  buckets.sort((a, b) => g.sort === 'alt'
+    ? (a.year || Infinity) - (b.year || Infinity)
+    : (b.year || 0) - (a.year || 0));
 
   const newest = years.length ? years[0] : '—';
 
@@ -116,11 +140,11 @@ function GaleriePage({ navigate, onOpenPhoto }) {
       <SubHero
         navigate={navigate}
         breadcrumb="Galerie"
-        kicker="Bildarchiv · seit 1962"
-        title={<>Unsere <span style={{color:'var(--red)', fontStyle:'italic'}}>Galerie</span></>}
-        tagline={SITE_CONFIG.galleryTagline}
+        kicker={g.kicker}
+        title={accentTitle(g.title, 'var(--red)')}
+        tagline={g.tagline}
         facts={[
-          { label: 'Fotos im Archiv', value: PHOTOS.length },
+          { label: 'Fotos im Archiv', value: photos.length },
           { label: 'Jahrgänge', value: years.length },
           { label: 'Bereiche', value: `${groups.length - 1} Gruppen` },
           { label: 'Neueste Session', value: newest },
@@ -131,51 +155,58 @@ function GaleriePage({ navigate, onOpenPhoto }) {
         <div className="container">
           <div className="section-head">
             <div>
-              <span className="eyebrow">Rückblick</span>
+              <span className="eyebrow">{g.sectionEyebrow}</span>
               <h2 style={{ marginTop: 14, fontSize: 'clamp(36px, 4.4vw, 64px)' }}>
-                Jahr für <span className="italic" style={{color:'var(--green)'}}>Jahr</span>
+                {accentTitle(g.sectionTitle, 'var(--green)')}
               </h2>
             </div>
-            <p className="lead">
-              Garde, Musikzug, Präsidium und das ganze närrische Vereinsleben —
-              filtere nach Gruppe oder Saison und klick ein Foto für die Großansicht.
-            </p>
+            <p className="lead">{g.sectionLead}</p>
           </div>
 
-          <div className="gallery-filters">
-            <div className="gallery-filter-row">
-              <span className="lbl">Gruppe</span>
-              {groups.map(g => (
-                <button key={g}
-                  className={"chip-check" + (group === g ? ' on' : '')}
-                  onClick={() => setGroup(g)}>
-                  <span className="dot"></span>{g}
-                </button>
-              ))}
+          {(g.showGroupFilter || g.showYearFilter) && (
+            <div className="gallery-filters">
+              {g.showGroupFilter && (
+                <div className="gallery-filter-row">
+                  <span className="lbl">Gruppe</span>
+                  {groups.map(name => (
+                    <button key={name}
+                      className={"chip-check" + (group === name ? ' on' : '')}
+                      onClick={() => setGroup(name)}>
+                      <span className="dot"></span>{name}
+                    </button>
+                  ))}
+                  {!g.showYearFilter && (
+                    <span className="gallery-result">
+                      {filtered.length} {filtered.length === 1 ? 'Foto' : 'Fotos'}
+                    </span>
+                  )}
+                </div>
+              )}
+              {g.showYearFilter && (
+                <div className="gallery-filter-row">
+                  <span className="lbl">Jahr</span>
+                  <button className={"chip-check" + (year === 'Alle' ? ' on' : '')} onClick={() => setYear('Alle')}>
+                    <span className="dot"></span>Alle
+                  </button>
+                  {years.map(y => (
+                    <button key={y}
+                      className={"chip-check" + (year === y ? ' on' : '')}
+                      onClick={() => setYear(y)}>
+                      <span className="dot"></span>{y}
+                    </button>
+                  ))}
+                  <span className="gallery-result">
+                    {filtered.length} {filtered.length === 1 ? 'Foto' : 'Fotos'}
+                  </span>
+                </div>
+              )}
             </div>
-            <div className="gallery-filter-row">
-              <span className="lbl">Jahr</span>
-              <button className={"chip-check" + (year === 'Alle' ? ' on' : '')} onClick={() => setYear('Alle')}>
-                <span className="dot"></span>Alle
-              </button>
-              {years.map(y => (
-                <button key={y}
-                  className={"chip-check" + (year === y ? ' on' : '')}
-                  onClick={() => setYear(y)}>
-                  <span className="dot"></span>{y}
-                </button>
-              ))}
-              <span className="gallery-result">
-                {filtered.length} {filtered.length === 1 ? 'Foto' : 'Fotos'}
-              </span>
-            </div>
-          </div>
+          )}
 
           {buckets.length === 0 ? (
             <div className="gallery-empty">
-              <strong>Noch nichts im Kasten</strong>
-              Für diese Auswahl gibt es aktuell keine Fotos. Probier eine andere
-              Gruppe oder ein anderes Jahr.
+              <strong>{g.emptyTitle}</strong>
+              {g.emptyText}
             </div>
           ) : (
             buckets.map(b => (
@@ -194,26 +225,27 @@ function GaleriePage({ navigate, onOpenPhoto }) {
         </div>
       </section>
 
-      <section className="block" style={{ background: 'var(--ink)', color: 'var(--cream)', textAlign: 'center' }}>
-        <div className="container">
-          <span className="eyebrow" style={{ color: 'rgba(247,241,230,0.6)' }}>HD-Download</span>
-          <h2 style={{ marginTop: 14, color: 'var(--cream)' }}>
-            Fotos in voller <span className="italic" style={{color:'var(--gold)'}}>Auflösung</span>
-          </h2>
-          <p style={{ maxWidth: 580, margin: '20px auto 30px', color: 'rgba(247,241,230,0.8)' }}>
-            Die Web-Vorschau ist für alle da. Mitglieder laden jede Aufnahme
-            zusätzlich in Originalgröße herunter — inklusive Archivbestand seit 2012.
-          </p>
-          <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {window.__currentUser ? (
-              <button className="btn" onClick={() => navigate('mitglieder')}>Zum Mitgliederbereich</button>
-            ) : (
-              <button className="btn" onClick={() => navigate('login')}>Mitglieder-Login</button>
-            )}
-            <button className="btn ghost" onClick={() => navigate('home')}>Zurück zur Startseite</button>
+      {g.showHdSection && (
+        <section className="block" style={{ background: 'var(--ink)', color: 'var(--cream)', textAlign: 'center' }}>
+          <div className="container">
+            <span className="eyebrow" style={{ color: 'rgba(247,241,230,0.6)' }}>HD-Download</span>
+            <h2 style={{ marginTop: 14, color: 'var(--cream)' }}>
+              {accentTitle(g.hdTitle, 'var(--gold)')}
+            </h2>
+            <p style={{ maxWidth: 580, margin: '20px auto 30px', color: 'rgba(247,241,230,0.8)' }}>
+              {g.hdText}
+            </p>
+            <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {window.__currentUser ? (
+                <button className="btn" onClick={() => navigate('mitglieder')}>Zum Mitgliederbereich</button>
+              ) : g.hdMembersOnly ? (
+                <button className="btn" onClick={() => navigate('login')}>Mitglieder-Login</button>
+              ) : null}
+              <button className="btn ghost" onClick={() => navigate('home')}>Zurück zur Startseite</button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </>
   );
 }
@@ -607,6 +639,6 @@ function SponsorsPage({ navigate }) {
 }
 
 Object.assign(window, {
-  SubHero, PhotoCard, GroupPhotos, GaleriePage,
+  SubHero, PhotoCard, GroupPhotos, GaleriePage, accentTitle,
   GardePage, MusikzugPage, VorsitzPage, SponsorsPage,
 });

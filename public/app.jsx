@@ -1,6 +1,6 @@
 // Apply any admin overrides saved in localStorage before first render
 (function applyAdminOverrides() {
-  const keys = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','INTERNAL','SITE_CONFIG'];
+  const keys = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','INTERNAL','SITE_CONFIG'];
   keys.forEach(k => {
     try {
       const raw = localStorage.getItem('nzadm_' + k);

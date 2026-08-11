@@ -331,6 +331,49 @@ function photoYear(p) {
   return m ? Number(m[0]) : null;
 }
 
+// Aktuelle Galerie-Gruppen — im Admin (Einstellungen) änderbar, daher immer
+// über window lesen statt über die Konstante oben.
+function photoGroups() {
+  const g = (typeof window !== 'undefined' && window.PHOTO_GROUPS) || PHOTO_GROUPS;
+  return Array.isArray(g) && g.length ? g : PHOTO_GROUPS;
+}
+
+// ----- Galerie-Einstellungen -----
+// Standardwerte; im Admin unter „Einstellungen › Galerie" überschreibbar
+// (gespeichert als SITE_CONFIG.gallery).
+const GALLERY_DEFAULTS = {
+  kicker:         'Bildarchiv · seit 1962',
+  title:          'Unsere Galerie',
+  tagline:        'Sechs Jahrzehnte Konfetti, Kostüme und Kapriolen — unser Bildarchiv von den ersten Umzügen bis zur aktuellen Session.',
+  sectionEyebrow: 'Rückblick',
+  sectionTitle:   'Jahr für Jahr',
+  sectionLead:    'Garde, Musikzug, Präsidium und das ganze närrische Vereinsleben — filtere nach Gruppe oder Saison und klick ein Foto für die Großansicht.',
+  emptyTitle:     'Noch nichts im Kasten',
+  emptyText:      'Für diese Auswahl gibt es aktuell keine Fotos. Probier eine andere Gruppe oder ein anderes Jahr.',
+  showInNav:       true,   // Galerie-Link in Navigation und Footer
+  showGroupFilter: true,   // Filterzeile „Gruppe"
+  showYearFilter:  true,   // Filterzeile „Jahr"
+  showAlbumBadge:  true,   // Anlass-Badge auf den Fotokacheln
+  sort:           'neu',   // 'neu' = neueste Saison zuerst, 'alt' = älteste zuerst
+  photosPerGroup:  8,      // Fotos in den Gruppen-Strips (Garde, Musikzug, Präsidium)
+  hdMembersOnly:   true,   // HD-Download nur für angemeldete Mitglieder
+  showHdSection:   true,   // dunkler HD-Abschnitt am Ende der Galerie-Seite
+  hdTitle:        'Fotos in voller Auflösung',
+  hdText:         'Die Web-Vorschau ist für alle da. Mitglieder laden jede Aufnahme zusätzlich in Originalgröße herunter — inklusive Archivbestand seit 2012.',
+};
+
+// Zusammengeführte Galerie-Einstellungen (Standard + Admin-Überschreibungen).
+function galleryConfig() {
+  const cfg = (typeof window !== 'undefined' && window.SITE_CONFIG) || SITE_CONFIG || {};
+  const saved = cfg.gallery || {};
+  const merged = Object.assign({}, GALLERY_DEFAULTS, saved);
+  // Datenstände vor der Galerie-Einstellungsseite: Text lag direkt im SITE_CONFIG
+  if (saved.tagline === undefined && cfg.galleryTagline) merged.tagline = cfg.galleryTagline;
+  const n = Number(merged.photosPerGroup);
+  merged.photosPerGroup = n > 0 ? Math.floor(n) : GALLERY_DEFAULTS.photosPerGroup;
+  return merged;
+}
+
 // ----- Mitglieder-Demo (vordefinierte Logins) -----
 const DEMO_USERS = [
   { email: 'gast@nazumido.at', password: 'gast', name: 'Gast Mitglied', role: 'Mitglied', avatar: 'G' },
@@ -378,7 +421,7 @@ const SITE_CONFIG = {
   email:         'Nazu.Mido@gmx.at',
   website:       'https://www.nazu-mido.at',
   websiteLabel:  'www.nazu-mido.at',
-  galleryTagline: 'Sechs Jahrzehnte Konfetti, Kostüme und Kapriolen — unser Bildarchiv von den ersten Umzügen bis zur aktuellen Session.',
+  gallery:       Object.assign({}, GALLERY_DEFAULTS),
   topbarStrip: [
     'Session 2026 · Helau & Narri!',
     'Großer Faschingsumzug 14. Februar',
@@ -390,6 +433,7 @@ const SITE_CONFIG = {
 
 Object.assign(window, {
   NEWS, EVENTS, GROUPS, PEOPLE, TAGS, SPONSORS, SPONSORS_TIERS,
-  GARDE, MUSIKZUG, VORSITZ, PHOTOS, PHOTO_GROUPS, photoYear,
+  GARDE, MUSIKZUG, VORSITZ, PHOTOS, PHOTO_GROUPS, photoYear, photoGroups,
+  GALLERY_DEFAULTS, galleryConfig,
   DEMO_USERS, INTERNAL, SITE_CONFIG,
 });
