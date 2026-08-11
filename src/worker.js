@@ -7,8 +7,13 @@
 //   • R2      (env.BUCKET)  — Objektspeicher für Foto-Uploads statt /uploads-Ordner
 //   • Assets  (env.ASSETS)  — statische Website aus dem Ordner ./public
 //
-// Die REST-API unter /api ist zeichengleich zur bisherigen Express-Version, das
-// Frontend (public/) musste daher nicht angepasst werden.
+// Die REST-API unter /api ist zeichengleich zur bisherigen Express-Version.
+//
+// HINWEIS: Die Website selbst liest ihre Inhalte aus public/data.jsx (plus den
+// Admin-Überschreibungen im localStorage) und ruft die /api-Routen derzeit
+// nicht auf. Verwaltet wird ausschließlich über das Panel unter #admin; das
+// frühere zweite Dashboard unter /admin wurde entfernt. Die API bleibt für
+// eine spätere serverseitige Speicherung erhalten.
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -429,11 +434,12 @@ app.get('/uploads/:key{.+}', async (c) => {
 });
 
 // ===========================================================================
-// Admin-Panel bequem unter /admin (public/admin/dashboard.html)
+// Verwaltung: Es gibt genau EIN Admin-Panel — das der Website selbst
+// (public/admin.jsx, Route #admin). /admin und /login leiten dorthin weiter,
+// damit alte Lesezeichen weiterhin funktionieren.
 // ===========================================================================
-app.get('/admin', (c) =>
-  c.env.ASSETS.fetch(new Request(new URL('/admin/dashboard.html', c.req.url)))
-);
+app.get('/admin', (c) => c.redirect('/#admin', 302));
+app.get('/login', (c) => c.redirect('/#login', 302));
 
 // ===========================================================================
 // 404 für unbekannte API-Routen (JSON statt HTML-Asset)

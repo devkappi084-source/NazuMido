@@ -15,7 +15,7 @@ npx wrangler dev           # local dev server on http://localhost:8787
 
 There is no build step — the site runs directly in the browser via CDN-hosted React 18.3.1 + Babel standalone 7.29.0. Open `public/index.html` (or `public/Nazumido.html`, they are identical) in a browser or use `wrangler dev` to preview.
 
-The `wrangler.toml` serves the `public/` directory as static assets (`directory = "./public"`). **Everything the browser loads must live under `public/`** — files in the repo root are never served. The Worker (`src/worker.js`) only handles paths with no matching file: `/api/*`, `/uploads/*`, `/admin`.
+The `wrangler.toml` serves the `public/` directory as static assets (`directory = "./public"`). **Everything the browser loads must live under `public/`** — files in the repo root are never served. The Worker (`src/worker.js`) only handles paths with no matching file: `/api/*`, `/uploads/*`, and the redirects `/admin` → `/#admin`, `/login` → `/#login`.
 
 The three CDN `<script>` tags carry Subresource-Integrity hashes. Bumping React or Babel means recomputing them, otherwise the browser refuses the script and the page stays blank.
 
@@ -29,10 +29,9 @@ public/                     — everything served to the browser
   components.jsx              — Shared UI components
   pages-detail.jsx            — Sub-page components
   auth.jsx                    — Auth hook + login/register + member dashboard
-  admin.jsx                   — localStorage-backed admin panel (#admin route)
+  admin.jsx                   — admin panel (#admin route), the only admin UI
   app.jsx                     — Root App component, routing
   assets/                     — logo.png (Wappen), garde.png, guggenmusik.png, plus photos
-  login.html, admin/          — separate Worker-backed admin UI (D1), served at /login and /admin
 src/worker.js               — Cloudflare Worker: API, D1, R2
 wrangler.toml               — Cloudflare Workers config
 ```
@@ -110,15 +109,25 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip`, `gallery`)
 - `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`
 
-## Admin panels
+## Admin panel
 
-There are two separate admin UIs, both styled with the Nazumido brand tokens
-(red/green/gold on cream, Instrument Serif headings, DM Mono labels):
+There is exactly **one** admin UI: the React panel on the `#admin` route
+(`public/admin.jsx`), styled with the Nazumido brand tokens (red/green/gold on
+cream, Instrument Serif headings, DM Mono labels). It edits all site content:
+Events, Neuigkeiten, **Galerie**, Vereinsinfo, Personen, Gruppen, Sponsoren,
+Mitglieder-Inhalte and Einstellungen, and stores everything in `localStorage`
+(`nzadm_*` keys).
 
-| UI | Where | Backend | Purpose |
-|---|---|---|---|
-| React panel | `#admin` route, `public/admin.jsx` | `localStorage` (`nzadm_*` keys) | Edits all site content: Events, Neuigkeiten, **Galerie**, Vereinsinfo, Personen, Gruppen, Sponsoren, Mitglieder-Inhalte, Einstellungen |
-| Worker dashboard | `/admin` + `/login`, `public/admin/`, `public/login.html` | D1 + R2 via `src/worker.js` | Beiträge and Einstellungen stored server-side |
+A second, Worker-backed dashboard (`public/admin/`, `public/login.html`, D1)
+used to live at `/admin` and `/login`; it was removed because it only covered
+Beiträge and wrote to a database the public site never reads. Both paths now
+redirect to the React panel. The `/api/*` routes in `src/worker.js` stay in
+place for a possible future server-side store — don't add a second UI on top
+of them.
+
+**Caveat worth knowing:** because storage is `localStorage`, edits are visible
+only in the browser that made them — they do not reach site visitors. Moving
+content to the Worker API (D1) is the open next step if edits must go live.
 
 The React panel has two modes: *Schnellzugriff* (Events, Neuigkeiten, Galerie,
 Vereinsinfo, Einstellungen) and *Vollzugriff* (all tabs). Tabs are declared in the `ADM_TABS`
