@@ -36,9 +36,27 @@ function SubHero({ kicker, title, tagline, facts, breadcrumb, navigate }) {
   );
 }
 
+// ---------- Photo Card (shared) ----------
+function PhotoCard({ photo, onOpen }) {
+  return (
+    <div className="photo-card" onClick={() => onOpen(photo)}>
+      {photo.src ? <img src={photo.src} alt={photo.title} /> : <div className="ph">Foto · {photo.title}</div>}
+      {photo.album && <span className="album-badge">{photo.album}</span>}
+      <span className={"hd-badge " + (window.__currentUser ? '' : 'locked')}>
+        <span className="dot"></span>
+        {window.__currentUser ? 'HD verfügbar' : '🔒 HD'}
+      </span>
+      <div className="photo-card-info">
+        <div className="t">{photo.title}</div>
+        <div className="d">{photo.date}{photo.group ? ` · ${photo.group}` : ''}</div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Photo Strip (group-specific) ----------
-function GroupPhotos({ group, onOpen }) {
-  const photos = PHOTOS.filter(p => p.group === group || group === 'Allgemein');
+function GroupPhotos({ group, onOpen, navigate }) {
+  const photos = PHOTOS.filter(p => p.group === group || group === 'Allgemein').slice(0, 8);
   if (!photos.length) return null;
   return (
     <section className="block" style={{ paddingTop: 60 }}>
@@ -54,22 +72,149 @@ function GroupPhotos({ group, onOpen }) {
           </p>
         </div>
         <div className="photo-grid">
-          {photos.map(p => (
-            <div key={p.id} className="photo-card" onClick={() => onOpen(p)}>
-              {p.src ? <img src={p.src} alt={p.title} /> : <div className="ph">Foto · {p.title}</div>}
-              <span className={"hd-badge " + (window.__currentUser ? '' : 'locked')}>
-                <span className="dot"></span>
-                {window.__currentUser ? 'HD verfügbar' : '🔒 HD'}
-              </span>
-              <div className="photo-card-info">
-                <div className="t">{p.title}</div>
-                <div className="d">{p.date}</div>
-              </div>
-            </div>
-          ))}
+          {photos.map(p => <PhotoCard key={p.id} photo={p} onOpen={onOpen} />)}
         </div>
+        {navigate && (
+          <div style={{ marginTop: 28, display: 'flex', justifyContent: 'center' }}>
+            <button className="btn outline-dark" onClick={() => navigate('galerie')}>
+              Zur ganzen Galerie <span aria-hidden>→</span>
+            </button>
+          </div>
+        )}
       </div>
     </section>
+  );
+}
+
+// ---------- Galerie Page ----------
+function GaleriePage({ navigate, onOpenPhoto }) {
+  const [group, setGroup] = useStateD('Alle');
+  const [year, setYear] = useStateD('Alle');
+
+  const groups = ['Alle', ...(window.PHOTO_GROUPS || ['Garde', 'Musikzug', 'Präsidium', 'Allgemein'])];
+  const years = [...new Set(PHOTOS.map(photoYear).filter(Boolean))].sort((a, b) => b - a);
+
+  const filtered = PHOTOS.filter(p =>
+    (group === 'Alle' || p.group === group) &&
+    (year === 'Alle' || photoYear(p) === year)
+  );
+
+  // Nach Jahr gruppieren, neueste zuerst; Fotos ohne Jahr landen am Ende
+  const buckets = [];
+  filtered.forEach(p => {
+    const y = photoYear(p);
+    let b = buckets.find(x => x.year === y);
+    if (!b) { b = { year: y, photos: [] }; buckets.push(b); }
+    b.photos.push(p);
+  });
+  buckets.sort((a, b) => (b.year || 0) - (a.year || 0));
+
+  const newest = years.length ? years[0] : '—';
+
+  return (
+    <>
+      <SubHero
+        navigate={navigate}
+        breadcrumb="Galerie"
+        kicker="Bildarchiv · seit 1962"
+        title={<>Unsere <span style={{color:'var(--red)', fontStyle:'italic'}}>Galerie</span></>}
+        tagline={SITE_CONFIG.galleryTagline}
+        facts={[
+          { label: 'Fotos im Archiv', value: PHOTOS.length },
+          { label: 'Jahrgänge', value: years.length },
+          { label: 'Bereiche', value: `${groups.length - 1} Gruppen` },
+          { label: 'Neueste Session', value: newest },
+        ]}
+      />
+
+      <section className="block" style={{ paddingTop: 60 }}>
+        <div className="container">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Rückblick</span>
+              <h2 style={{ marginTop: 14, fontSize: 'clamp(36px, 4.4vw, 64px)' }}>
+                Jahr für <span className="italic" style={{color:'var(--green)'}}>Jahr</span>
+              </h2>
+            </div>
+            <p className="lead">
+              Garde, Musikzug, Präsidium und das ganze närrische Vereinsleben —
+              filtere nach Gruppe oder Saison und klick ein Foto für die Großansicht.
+            </p>
+          </div>
+
+          <div className="gallery-filters">
+            <div className="gallery-filter-row">
+              <span className="lbl">Gruppe</span>
+              {groups.map(g => (
+                <button key={g}
+                  className={"chip-check" + (group === g ? ' on' : '')}
+                  onClick={() => setGroup(g)}>
+                  <span className="dot"></span>{g}
+                </button>
+              ))}
+            </div>
+            <div className="gallery-filter-row">
+              <span className="lbl">Jahr</span>
+              <button className={"chip-check" + (year === 'Alle' ? ' on' : '')} onClick={() => setYear('Alle')}>
+                <span className="dot"></span>Alle
+              </button>
+              {years.map(y => (
+                <button key={y}
+                  className={"chip-check" + (year === y ? ' on' : '')}
+                  onClick={() => setYear(y)}>
+                  <span className="dot"></span>{y}
+                </button>
+              ))}
+              <span className="gallery-result">
+                {filtered.length} {filtered.length === 1 ? 'Foto' : 'Fotos'}
+              </span>
+            </div>
+          </div>
+
+          {buckets.length === 0 ? (
+            <div className="gallery-empty">
+              <strong>Noch nichts im Kasten</strong>
+              Für diese Auswahl gibt es aktuell keine Fotos. Probier eine andere
+              Gruppe oder ein anderes Jahr.
+            </div>
+          ) : (
+            buckets.map(b => (
+              <div key={b.year || 'ohne'} className="gallery-year">
+                <div className="gallery-year-head">
+                  <span className="y">{b.year || 'Ohne Jahr'}</span>
+                  <span className="season">{b.year ? `Session ${b.year}` : 'Datum unbekannt'}</span>
+                  <span className="count">{b.photos.length} {b.photos.length === 1 ? 'Aufnahme' : 'Aufnahmen'}</span>
+                </div>
+                <div className="photo-grid">
+                  {b.photos.map(p => <PhotoCard key={p.id} photo={p} onOpen={onOpenPhoto} />)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="block" style={{ background: 'var(--ink)', color: 'var(--cream)', textAlign: 'center' }}>
+        <div className="container">
+          <span className="eyebrow" style={{ color: 'rgba(247,241,230,0.6)' }}>HD-Download</span>
+          <h2 style={{ marginTop: 14, color: 'var(--cream)' }}>
+            Fotos in voller <span className="italic" style={{color:'var(--gold)'}}>Auflösung</span>
+          </h2>
+          <p style={{ maxWidth: 580, margin: '20px auto 30px', color: 'rgba(247,241,230,0.8)' }}>
+            Die Web-Vorschau ist für alle da. Mitglieder laden jede Aufnahme
+            zusätzlich in Originalgröße herunter — inklusive Archivbestand seit 2012.
+          </p>
+          <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {window.__currentUser ? (
+              <button className="btn" onClick={() => navigate('mitglieder')}>Zum Mitgliederbereich</button>
+            ) : (
+              <button className="btn" onClick={() => navigate('login')}>Mitglieder-Login</button>
+            )}
+            <button className="btn ghost" onClick={() => navigate('home')}>Zurück zur Startseite</button>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -167,7 +312,7 @@ function GardePage({ navigate, onOpenPhoto }) {
         </div>
       </section>
 
-      <GroupPhotos group="Garde" onOpen={onOpenPhoto} />
+      <GroupPhotos group="Garde" onOpen={onOpenPhoto} navigate={navigate} />
 
       <section className="block" style={{ background: 'var(--ink)', color: 'var(--cream)', textAlign: 'center' }}>
         <div className="container">
@@ -272,7 +417,7 @@ function MusikzugPage({ navigate, onOpenPhoto }) {
         </div>
       </section>
 
-      <GroupPhotos group="Musikzug" onOpen={onOpenPhoto} />
+      <GroupPhotos group="Musikzug" onOpen={onOpenPhoto} navigate={navigate} />
 
       <section className="block" style={{ background: 'var(--ink)', color: 'var(--cream)', textAlign: 'center' }}>
         <div className="container">
@@ -381,7 +526,7 @@ function VorsitzPage({ navigate, onOpenPhoto }) {
         </div>
       </section>
 
-      <GroupPhotos group="Präsidium" onOpen={onOpenPhoto} />
+      <GroupPhotos group="Präsidium" onOpen={onOpenPhoto} navigate={navigate} />
     </>
   );
 }
@@ -462,5 +607,6 @@ function SponsorsPage({ navigate }) {
 }
 
 Object.assign(window, {
-  SubHero, GroupPhotos, GardePage, MusikzugPage, VorsitzPage, SponsorsPage,
+  SubHero, PhotoCard, GroupPhotos, GaleriePage,
+  GardePage, MusikzugPage, VorsitzPage, SponsorsPage,
 });

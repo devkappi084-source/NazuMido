@@ -262,7 +262,7 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                       <div className="mt">{doc.meta}</div>
                     </div>
                     <button className="btn-mini"
-                      onClick={() => doc.kind === 'photos' ? navigate('photos') : alert('Demo: Dokument-Download startet…')}>
+                      onClick={() => doc.kind === 'photos' ? navigate('galerie') : alert('Demo: Dokument-Download startet…')}>
                       {doc.kind === 'photos' ? 'Galerie' : 'Öffnen'}
                     </button>
                   </li>
@@ -277,17 +277,13 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                 Klick auf ein Bild zum Herunterladen.
               </p>
               <div className="photo-grid" style={{ marginTop: 6 }}>
-                {PHOTOS.map(p => (
-                  <div key={p.id} className="photo-card" onClick={() => onOpenPhoto(p)}>
-                    {p.src ? <img src={p.src} alt={p.title} /> : <div className="ph">Foto · {p.title}</div>}
-                    <span className="hd-badge"><span className="dot"></span>HD verfügbar</span>
-                    <div className="photo-card-info">
-                      <div className="t">{p.title}</div>
-                      <div className="d">{p.date}</div>
-                    </div>
-                  </div>
+                {PHOTOS.slice(0, 8).map(p => (
+                  <PhotoCard key={p.id} photo={p} onOpen={onOpenPhoto} />
                 ))}
               </div>
+              <button className="btn outline-dark" style={{ marginTop: 18 }} onClick={() => navigate('galerie')}>
+                Ganzes Archiv ansehen <span aria-hidden>→</span>
+              </button>
             </div>
           </div>
 
@@ -304,6 +300,9 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                 </button>
                 <button className="btn outline-dark" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('vorsitz')}>
                   <span>Präsidium-Bereich</span><span>→</span>
+                </button>
+                <button className="btn outline-dark" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('galerie')}>
+                  <span>Fotogalerie</span><span>→</span>
                 </button>
                 <button className="btn outline-dark" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('sponsoren')}>
                   <span>Sponsorenübersicht</span><span>→</span>

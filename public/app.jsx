@@ -101,6 +101,9 @@ function App() {
       {route === 'vorsitz' && (
         <main><VorsitzPage navigate={handleNav} onOpenPhoto={setModal} /></main>
       )}
+      {(route === 'galerie' || route === 'photos') && (
+        <main><GaleriePage navigate={handleNav} onOpenPhoto={setModal} /></main>
+      )}
       {route === 'sponsoren' && (
         <main><SponsorsPage navigate={handleNav} /></main>
       )}

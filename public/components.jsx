@@ -7,6 +7,7 @@ function TopBar({ route, navigate, user, onLogout }) {
     { id: 'garde', label: 'Garde' },
     { id: 'musikzug', label: 'Musikzug' },
     { id: 'vorsitz', label: 'Präsidium' },
+    { id: 'galerie', label: 'Galerie' },
     { id: 'sponsoren', label: 'Sponsoren' },
   ];
   const strip = SITE_CONFIG.topbarStrip;
@@ -539,6 +540,7 @@ function Footer({ navigate }) {
               <li><a href="#garde" onClick={link('garde')}>Garde</a></li>
               <li><a href="#musikzug" onClick={link('musikzug')}>Musikzug</a></li>
               <li><a href="#vorsitz" onClick={link('vorsitz')}>Präsidium</a></li>
+              <li><a href="#galerie" onClick={link('galerie')}>Galerie</a></li>
               <li><a href="#sponsoren" onClick={link('sponsoren')}>Sponsoren</a></li>
             </ul>
           </div>
@@ -548,7 +550,7 @@ function Footer({ navigate }) {
               <li><a href="#login" onClick={link('login')}>Login</a></li>
               <li><a href="#login" onClick={link('login')}>Registrieren</a></li>
               <li><a href="#mitglieder" onClick={link('mitglieder')}>Interner Bereich</a></li>
-              <li><a href="#mitglieder" onClick={link('mitglieder')}>HD-Fotos</a></li>
+              <li><a href="#galerie" onClick={link('galerie')}>HD-Fotos</a></li>
             </ul>
           </div>
           <div>

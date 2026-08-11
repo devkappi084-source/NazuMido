@@ -279,16 +279,57 @@ const SPONSORS_TIERS = [
 const SPONSORS = SPONSORS_TIERS.flatMap(t => t.sponsors.map(s => s.name));
 
 // ----- Foto Galerie -----
+// Gruppen der Galerie — auch im Admin als Auswahlliste verwendet
+const PHOTO_GROUPS = ['Garde', 'Musikzug', 'Präsidium', 'Allgemein'];
+
 const PHOTOS = [
-  { id: 'ph1', src: 'assets/garde.png', title: 'Garde am Hauptplatz', date: 'Feb 2026', group: 'Garde', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph2', src: 'assets/guggenmusik.png', title: 'Musikzug Konzert', date: 'Nov 2025', group: 'Musikzug', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph3', src: null, title: 'Faschingsumzug 2025', date: 'Feb 2025', group: 'Allgemein', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph4', src: null, title: 'Prinzenball Gala', date: 'Feb 2025', group: 'Präsidium', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph5', src: null, title: 'Mini-Garde Training', date: 'Jan 2026', group: 'Garde', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph6', src: null, title: 'Kehraus 2025', date: 'Feb 2025', group: 'Allgemein', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph7', src: null, title: 'Weihnachtsfeier', date: 'Dez 2025', group: 'Präsidium', size: '1024×768', hdSize: '4096×3072' },
-  { id: 'ph8', src: null, title: 'Landeswettbewerb', date: 'Nov 2025', group: 'Musikzug', size: '1024×768', hdSize: '4096×3072' },
+  // ----- Session 2026 -----
+  { id: 'ph1', src: 'assets/garde.png', title: 'Garde am Hauptplatz', date: 'Feb 2026', year: 2026, group: 'Garde', album: 'Marktgemeinde-Gala', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph5', src: null, title: 'Mini-Garde Training', date: 'Jan 2026', year: 2026, group: 'Garde', album: 'Trainingsalltag', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph9', src: null, title: 'Inthronisation Prinzenpaar', date: 'Jan 2026', year: 2026, group: 'Präsidium', album: 'Inthronisation', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph10', src: null, title: 'Probenwochenende Musikzug', date: 'Jan 2026', year: 2026, group: 'Musikzug', album: 'Trainingsalltag', size: '1024×768', hdSize: '4096×3072' },
+
+  // ----- Session 2025 -----
+  { id: 'ph2', src: 'assets/guggenmusik.png', title: 'Musikzug Konzert', date: 'Nov 2025', year: 2025, group: 'Musikzug', album: 'Landeswettbewerb', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph7', src: null, title: 'Weihnachtsfeier im Saal', date: 'Dez 2025', year: 2025, group: 'Präsidium', album: 'Vereinsleben', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph8', src: null, title: 'Landeswettbewerb Linz', date: 'Nov 2025', year: 2025, group: 'Musikzug', album: 'Landeswettbewerb', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph3', src: null, title: 'Faschingsumzug 2025', date: 'Feb 2025', year: 2025, group: 'Allgemein', album: 'Faschingsumzug', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph4', src: null, title: 'Prinzenball Gala', date: 'Feb 2025', year: 2025, group: 'Präsidium', album: 'Prinzenball', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph6', src: null, title: 'Kehraus am Rathausplatz', date: 'Feb 2025', year: 2025, group: 'Allgemein', album: 'Kehraus', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph11', src: null, title: 'Showgrafen beim Bezirkstanzfest', date: 'Feb 2025', year: 2025, group: 'Garde', album: 'Bezirkstanzfest Steyr', size: '1024×768', hdSize: '4096×3072' },
+
+  // ----- Session 2024 -----
+  { id: 'ph12', src: null, title: 'Umzug bei Schneetreiben', date: 'Feb 2024', year: 2024, group: 'Allgemein', album: 'Faschingsumzug', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph13', src: null, title: 'Garde-Show im Festzelt', date: 'Feb 2024', year: 2024, group: 'Garde', album: 'Prinzenball', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph14', src: null, title: 'Musikzug am Marktplatz', date: 'Feb 2024', year: 2024, group: 'Musikzug', album: 'Faschingsumzug', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph15', src: null, title: 'Ordensverleihung im Präsidium', date: 'Nov 2024', year: 2024, group: 'Präsidium', album: 'Vereinsleben', size: '1024×768', hdSize: '4096×3072' },
+
+  // ----- Session 2023 -----
+  { id: 'ph16', src: null, title: 'Prinzenpaar 2023', date: 'Feb 2023', year: 2023, group: 'Präsidium', album: 'Inthronisation', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph17', src: null, title: 'Auftritt im ORF-Landesstudio', date: 'Jan 2023', year: 2023, group: 'Garde', album: 'Auswärtsauftritte', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph18', src: null, title: 'Guggenmusik am Kehraus', date: 'Feb 2023', year: 2023, group: 'Musikzug', album: 'Kehraus', size: '1024×768', hdSize: '4096×3072' },
+
+  // ----- Session 2022 -----
+  { id: 'ph19', src: null, title: 'Erste Präsidentin im Amt', date: 'Nov 2022', year: 2022, group: 'Präsidium', album: 'Vereinsleben', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph20', src: null, title: 'CD-Präsentation "Cowboys im Schnee"', date: 'Okt 2022', year: 2022, group: 'Musikzug', album: 'Vereinsleben', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph21', src: null, title: 'Neustart nach der Pause', date: 'Feb 2022', year: 2022, group: 'Allgemein', album: 'Faschingsumzug', size: '1024×768', hdSize: '4096×3072' },
+
+  // ----- Ältere Jahrgänge -----
+  { id: 'ph22', src: null, title: 'Wagenbau in der Halle', date: 'Jan 2020', year: 2020, group: 'Allgemein', album: 'Hinter den Kulissen', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph23', src: null, title: 'Sondertanz zum 60-Jahr-Jubiläum', date: 'Feb 2020', year: 2020, group: 'Garde', album: 'Jubiläum', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph24', src: null, title: 'Festakt 60 Jahre Nazumido', date: 'Feb 2020', year: 2020, group: 'Präsidium', album: 'Jubiläum', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph25', src: null, title: 'Umzug durch Micheldorf', date: 'Feb 2018', year: 2018, group: 'Allgemein', album: 'Faschingsumzug', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph26', src: null, title: 'Wiener Faschingskongress', date: 'Nov 2018', year: 2018, group: 'Musikzug', album: 'Auswärtsauftritte', size: '1024×768', hdSize: '4096×3072' },
+  { id: 'ph27', src: null, title: 'Garde im Vereinsarchiv', date: 'Feb 2012', year: 2012, group: 'Garde', album: 'Archiv', size: '1024×768', hdSize: '4096×3072' },
 ];
+
+// Jahr eines Fotos ermitteln — ältere Datenstände (Admin/localStorage) haben
+// evtl. noch kein `year`-Feld, dann wird es aus dem Datum gelesen.
+function photoYear(p) {
+  if (p && p.year) return Number(p.year);
+  const m = p && p.date && String(p.date).match(/(19|20)\d{2}/);
+  return m ? Number(m[0]) : null;
+}
 
 // ----- Mitglieder-Demo (vordefinierte Logins) -----
 const DEMO_USERS = [
@@ -337,6 +378,7 @@ const SITE_CONFIG = {
   email:         'Nazu.Mido@gmx.at',
   website:       'https://www.nazu-mido.at',
   websiteLabel:  'www.nazu-mido.at',
+  galleryTagline: 'Sechs Jahrzehnte Konfetti, Kostüme und Kapriolen — unser Bildarchiv von den ersten Umzügen bis zur aktuellen Session.',
   topbarStrip: [
     'Session 2026 · Helau & Narri!',
     'Großer Faschingsumzug 14. Februar',
@@ -348,5 +390,6 @@ const SITE_CONFIG = {
 
 Object.assign(window, {
   NEWS, EVENTS, GROUPS, PEOPLE, TAGS, SPONSORS, SPONSORS_TIERS,
-  GARDE, MUSIKZUG, VORSITZ, PHOTOS, DEMO_USERS, INTERNAL, SITE_CONFIG,
+  GARDE, MUSIKZUG, VORSITZ, PHOTOS, PHOTO_GROUPS, photoYear,
+  DEMO_USERS, INTERNAL, SITE_CONFIG,
 });

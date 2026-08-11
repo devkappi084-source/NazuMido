@@ -45,9 +45,9 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 
 | File | Exports to `window` |
 |---|---|
-| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `DEMO_USERS`, `INTERNAL` |
+| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
 | `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `NewsletterBlock`, `Footer`, `Modal` |
-| `pages-detail.jsx` | `SubHero`, `GroupPhotos`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage` |
+| `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
 | `app.jsx` | Renders root; no exports (calls `ReactDOM.createRoot`) |
 
@@ -63,6 +63,7 @@ Hash-based routing via `window.location.hash`. The `route` state in `app.jsx` dr
 | `#garde` | `GardePage` |
 | `#musikzug` | `MusikzugPage` |
 | `#vorsitz` | `VorsitzPage` |
+| `#galerie` (alias `#photos`) | `GaleriePage` — Fotoarchiv, filterbar nach Gruppe und Jahr |
 | `#sponsoren` | `SponsorsPage` |
 | `#login` | `LoginPage` |
 | `#mitglieder` | `MemberDashboard` (or `LoginPage` if not authenticated) |
@@ -100,9 +101,36 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `GARDE` / `MUSIKZUG` / `VORSITZ` — detailed objects for sub-pages (facts, groups, highlights, schedule/repertoire/responsibilities, history)
 - `SPONSORS_TIERS` — three tiers (`Hauptsponsor`, `Premium`, `Förderer`), each with `tier`, `color`, `desc`, `sponsors[]`
 - `SPONSORS` — flat array of sponsor names derived from `SPONSORS_TIERS`, used in the scrolling marquee
-- `PHOTOS` — gallery items with `id`, `src` (nullable), `title`, `date`, `group`, `size` (web res), `hdSize`
+- `PHOTOS` — gallery items with `id`, `src` (nullable), `title`, `date`, `year`, `group`, `album` (occasion), `size` (web res), `hdSize`
+- `PHOTO_GROUPS` — the four gallery groups (`Garde`, `Musikzug`, `Präsidium`, `Allgemein`), used by the gallery filter and the admin dropdown
+- `photoYear(photo)` — helper that returns a photo's year, falling back to parsing `date` for older localStorage data written before `year` existed
 - `DEMO_USERS` — hardcoded login credentials (see Auth section above)
+- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip`, `galleryTagline`)
 - `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`
+
+## Admin panels
+
+There are two separate admin UIs, both styled with the Nazumido brand tokens
+(red/green/gold on cream, Instrument Serif headings, DM Mono labels):
+
+| UI | Where | Backend | Purpose |
+|---|---|---|---|
+| React panel | `#admin` route, `public/admin.jsx` | `localStorage` (`nzadm_*` keys) | Edits all site content: Events, Neuigkeiten, **Galerie**, Vereinsinfo, Personen, Gruppen, Sponsoren, Mitglieder-Inhalte, Einstellungen |
+| Worker dashboard | `/admin` + `/login`, `public/admin/`, `public/login.html` | D1 + R2 via `src/worker.js` | Beiträge and Einstellungen stored server-side |
+
+The React panel has two modes: *Schnellzugriff* (Events, Neuigkeiten, Galerie,
+Vereinsinfo) and *Vollzugriff* (all tabs). Tabs are declared in the `ADM_TABS`
+array in `admin.jsx` — add an entry there plus a render branch in `AdminPage`
+to add a new tab; `simple: true` also shows it in Schnellzugriff.
+
+Its markup uses the `.adm-*` classes defined at the bottom of `styles.css`
+(`.adm-card`, `.adm-field`, `.adm-btn`, `.adm-navitem`, `.adm-photo-grid`, …)
+rather than inline styles — keep new admin UI on those classes so it stays in
+sync with the site design.
+
+Saving goes through `saveData(key, data)`, which writes `nzadm_<KEY>` to
+`localStorage` **and** updates `window[KEY]`, so the public pages reflect
+changes immediately. `app.jsx` re-applies those overrides on every page load.
 
 ## CSS conventions
 
