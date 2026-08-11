@@ -31,7 +31,19 @@ function loadData(key) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
-const GROUP_OPTIONS = window.PHOTO_GROUPS || ['Garde', 'Musikzug', 'Präsidium', 'Allgemein'];
+// Galerie-Gruppen sind in den Einstellungen änderbar — daher bei jedem Render
+// frisch lesen statt einmalig beim Laden festhalten.
+function groupOptions() {
+  const g = window.PHOTO_GROUPS;
+  return Array.isArray(g) && g.length ? g : ['Garde', 'Musikzug', 'Präsidium', 'Allgemein'];
+}
+
+// Galerie-Einstellungen inkl. Standardwerten lesen
+function galleryCfg() {
+  return typeof galleryConfig === 'function'
+    ? galleryConfig()
+    : Object.assign({}, window.GALLERY_DEFAULTS, (window.SITE_CONFIG || {}).gallery);
+}
 
 // ─── UI-Bausteine (Design-System der Website) ─────────────────────────────────
 function Btn({ children, onClick, v = 'primary', className = '', type = 'button' }) {
@@ -66,6 +78,20 @@ function Toast({ msg, onDone }) {
 function Chip({ active, onClick, children }) {
   return (
     <button className={'adm-chip' + (active ? ' on' : '')} onClick={onClick}>{children}</button>
+  );
+}
+
+// Schalter für Ja/Nein-Einstellungen
+function Toggle({ label, desc, checked, onChange }) {
+  return (
+    <label className={'adm-toggle' + (checked ? ' on' : '')}>
+      <input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} />
+      <span className="box" aria-hidden>✓</span>
+      <span className="txt">
+        <b>{label}</b>
+        {desc && <em>{desc}</em>}
+      </span>
+    </label>
   );
 }
 
@@ -322,11 +348,200 @@ function AdmNews({ onSave, full }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GALERIE-EINSTELLUNGEN — Texte, Darstellung, Gruppen, HD-Freigabe
+// Wird sowohl im Galerie-Tab (eingeklappt) als auch in den Einstellungen genutzt.
+// ═══════════════════════════════════════════════════════════════════════════════
+function AdmGallerySettings({ onSave, onChanged, collapsible = false }) {
+  const [shown, setShown]   = useAdmSt(!collapsible);
+  const [cfg, setCfg]       = useAdmSt(() => loadData('SITE_CONFIG'));
+  const [g, setG]           = useAdmSt(() => galleryCfg());
+  const [rows, setRows]     = useAdmSt(() => groupOptions().map(n => ({ orig: n, name: n })));
+  const [origs]             = useAdmSt(() => groupOptions().slice());
+  const [err, setErr]       = useAdmSt('');
+
+  const set = (k, v) => setG({ ...g, [k]: v });
+  const txt = k => ({ value: g[k] || '', onChange: e => set(k, e.target.value) });
+
+  const addGroup = () => setRows([...rows, { orig: null, name: '' }]);
+  const updGroup = (i, v) => setRows(rows.map((r, j) => j === i ? { ...r, name: v } : r));
+  const delGroup = i => {
+    const r = rows[i];
+    if (r.orig && !confirm(`Gruppe „${r.orig}" entfernen? Fotos dieser Gruppe werden umgehängt.`)) return;
+    setRows(rows.filter((_, j) => j !== i));
+  };
+
+  const save = () => {
+    const names = rows.map(r => (r.name || '').trim()).filter(Boolean);
+    if (!names.length) { setErr('Mindestens eine Galerie-Gruppe wird gebraucht.'); return; }
+    if (new Set(names).size !== names.length) { setErr('Gruppennamen müssen eindeutig sein.'); return; }
+    setErr('');
+
+    // Umbenannte und entfernte Gruppen: Fotos mitziehen bzw. auffangen
+    const fallback = names.includes('Allgemein') ? 'Allgemein' : names[0];
+    const map = {};
+    rows.forEach(r => {
+      const n = (r.name || '').trim();
+      if (r.orig && n && n !== r.orig) map[r.orig] = n;
+    });
+    origs.forEach(o => {
+      if (!rows.some(r => r.orig === o)) map[o] = fallback;
+    });
+
+    if (Object.keys(map).length) {
+      const photos = (loadData('PHOTOS') || []).map(p => map[p.group] ? { ...p, group: map[p.group] } : p);
+      saveData('PHOTOS', photos);
+    }
+    saveData('PHOTO_GROUPS', names);
+    setRows(names.map(n => ({ orig: n, name: n })));
+
+    const nextCfg = { ...cfg };
+    delete nextCfg.galleryTagline; // Altbestand: Text liegt jetzt in gallery.tagline
+    const n = parseInt(g.photosPerGroup, 10);
+    nextCfg.gallery = { ...g, photosPerGroup: n > 0 ? n : (window.GALLERY_DEFAULTS || {}).photosPerGroup || 8 };
+    setCfg(nextCfg);
+    setG(nextCfg.gallery);
+    saveData('SITE_CONFIG', nextCfg);
+
+    onSave('Galerie-Einstellungen gespeichert');
+    if (onChanged) onChanged();
+  };
+
+  const reset = () => {
+    if (!confirm('Galerie-Einstellungen (Texte, Darstellung, HD) auf Standard zurücksetzen?')) return;
+    const defaults = { ...(window.GALLERY_DEFAULTS || {}) };
+    const nextCfg = { ...cfg, gallery: defaults };
+    delete nextCfg.galleryTagline;
+    setCfg(nextCfg); setG(defaults); setErr('');
+    saveData('SITE_CONFIG', nextCfg);
+    onSave('Galerie-Einstellungen zurückgesetzt');
+    if (onChanged) onChanged();
+  };
+
+  if (collapsible && !shown) {
+    return (
+      <div className="adm-card">
+        <div className="adm-card-title">Galerie-Einstellungen</div>
+        <p className="adm-card-desc">
+          Texte, Filter, Sortierung, Gruppen und HD-Freigabe der Galerie-Seite.
+          Dieselben Einstellungen findest du im Vollzugriff unter „Einstellungen".
+        </p>
+        <Btn v="ghost" onClick={() => setShown(true)}>Einstellungen öffnen</Btn>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {collapsible && (
+        <div className="adm-toolbar">
+          <span className="adm-section-label" style={{ margin: 0 }}>Galerie-Einstellungen</span>
+          <Btn v="ghost" className="sm right" onClick={() => setShown(false)}>Einklappen</Btn>
+        </div>
+      )}
+
+      <div className="adm-card">
+        <div className="adm-card-title">Texte der Galerie-Seite</div>
+        <p className="adm-card-desc">Kopfbereich und Überschriften auf <code>#galerie</code>. Beim Titel wird das letzte Wort farbig hervorgehoben.</p>
+        <div className="adm-grid-2">
+          <Fld label="Kicker (über dem Titel)"><Inp {...txt('kicker')} placeholder="Bildarchiv · seit 1962" /></Fld>
+          <Fld label="Seitentitel"><Inp {...txt('title')} placeholder="Unsere Galerie" /></Fld>
+        </div>
+        <Fld label="Einleitungstext"><Txt {...txt('tagline')} /></Fld>
+        <div className="adm-grid-2">
+          <Fld label="Abschnitts-Kicker"><Inp {...txt('sectionEyebrow')} placeholder="Rückblick" /></Fld>
+          <Fld label="Abschnitts-Überschrift"><Inp {...txt('sectionTitle')} placeholder="Jahr für Jahr" /></Fld>
+        </div>
+        <Fld label="Abschnitts-Text"><Txt {...txt('sectionLead')} /></Fld>
+        <div className="adm-grid-2">
+          <Fld label="Titel „keine Fotos“"><Inp {...txt('emptyTitle')} placeholder="Noch nichts im Kasten" /></Fld>
+          <Fld label="Text „keine Fotos“"><Inp {...txt('emptyText')} /></Fld>
+        </div>
+      </div>
+
+      <div className="adm-card">
+        <div className="adm-card-title">Darstellung</div>
+        <p className="adm-card-desc">Filter, Sortierung und wie viele Fotos auf den Gruppenseiten erscheinen.</p>
+        <div className="adm-grid-2">
+          <Fld label="Sortierung der Jahrgänge">
+            <Sel value={g.sort} onChange={e => set('sort', e.target.value)}>
+              <option value="neu">Neueste Session zuerst</option>
+              <option value="alt">Älteste Session zuerst</option>
+            </Sel>
+          </Fld>
+          <Fld label="Fotos je Gruppenseite">
+            <Inp type="number" min="1" value={g.photosPerGroup}
+              onChange={e => set('photosPerGroup', e.target.value)} />
+          </Fld>
+        </div>
+        <div className="adm-toggles">
+          <Toggle label="Galerie im Menü zeigen" desc="Link in Navigation und Footer"
+            checked={g.showInNav} onChange={v => set('showInNav', v)} />
+          <Toggle label="Filter nach Gruppe" desc="Chip-Zeile „Gruppe“ auf der Galerie-Seite"
+            checked={g.showGroupFilter} onChange={v => set('showGroupFilter', v)} />
+          <Toggle label="Filter nach Jahr" desc="Chip-Zeile „Jahr“ auf der Galerie-Seite"
+            checked={g.showYearFilter} onChange={v => set('showYearFilter', v)} />
+          <Toggle label="Anlass-Badge auf Fotos" desc="Zeigt das Album auf der Fotokachel"
+            checked={g.showAlbumBadge} onChange={v => set('showAlbumBadge', v)} />
+        </div>
+      </div>
+
+      <div className="adm-card">
+        <div className="adm-card-title">HD-Download</div>
+        <p className="adm-card-desc">Steuert die Freigabe der hochauflösenden Fassungen und den dunklen Abschnitt am Seitenende.</p>
+        <div className="adm-toggles">
+          <Toggle label="HD nur für Mitglieder" desc="Aus: jede Besucherin kann HD laden"
+            checked={g.hdMembersOnly} onChange={v => set('hdMembersOnly', v)} />
+          <Toggle label="HD-Abschnitt anzeigen" desc="Dunkler Block am Ende der Galerie"
+            checked={g.showHdSection} onChange={v => set('showHdSection', v)} />
+        </div>
+        {g.showHdSection && (
+          <>
+            <Fld label="Überschrift HD-Abschnitt"><Inp {...txt('hdTitle')} placeholder="Fotos in voller Auflösung" /></Fld>
+            <Fld label="Text HD-Abschnitt"><Txt {...txt('hdText')} /></Fld>
+          </>
+        )}
+      </div>
+
+      <div className="adm-card">
+        <div className="adm-card-title">Galerie-Gruppen</div>
+        <p className="adm-card-desc">
+          Bereiche für Filter und Foto-Zuordnung. Umbenennen zieht die betroffenen
+          Fotos automatisch mit; entfernte Gruppen landen bei
+          <strong> {rows.some(r => (r.name || '').trim() === 'Allgemein') ? 'Allgemein' : ((rows[0] && rows[0].name) || '—')}</strong>.
+        </p>
+        <div className="adm-note">
+          Die Namen <code>Garde</code>, <code>Musikzug</code> und <code>Präsidium</code> steuern
+          zusätzlich die Fotostreifen auf den jeweiligen Gruppenseiten — wer sie umbenennt,
+          lässt dort keine Fotos mehr erscheinen.
+        </div>
+        {rows.map((r, i) => (
+          <div key={i} className="adm-inline-row">
+            <Inp value={r.name} placeholder="Gruppenname" style={{ flex: 1 }}
+              onChange={e => updGroup(i, e.target.value)} />
+            <button className="adm-iconbtn" onClick={() => delGroup(i)} aria-label="Gruppe entfernen">✕</button>
+          </div>
+        ))}
+        <Btn v="ghost" className="sm" onClick={addGroup}>+ Gruppe hinzufügen</Btn>
+      </div>
+
+      {err && <p className="adm-err">{err}</p>}
+      <div className="adm-actions">
+        <Btn onClick={save}>Galerie-Einstellungen speichern</Btn>
+        <Btn v="ghost" className="right" onClick={reset}>Texte &amp; Darstellung zurücksetzen</Btn>
+      </div>
+      <p className="adm-card-desc" style={{ margin: '10px 0 0' }}>
+        Zurücksetzen betrifft nur Texte, Darstellung und HD-Freigabe — Gruppen und
+        Fotos bleiben unverändert.
+      </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GALERIE — Fotos vergangener Jahre
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdmGalerie({ onSave }) {
   const [items, setItems] = useAdmSt(() => loadData('PHOTOS'));
-  const [cfg, setCfg] = useAdmSt(() => loadData('SITE_CONFIG'));
   const [open, setOpen] = useAdmSt(null);
   const [form, setForm] = useAdmSt({});
   const [fYear, setFYear] = useAdmSt('Alle');
@@ -355,7 +570,14 @@ function AdmGalerie({ onSave }) {
     };
     setItems([p, ...items]); setOpen(p.id); setForm({ ...p });
   };
-  const saveText = () => { saveData('SITE_CONFIG', cfg); onSave('Galerie-Text gespeichert'); };
+
+  // Nach Änderungen an den Galerie-Einstellungen (z. B. umbenannte Gruppen)
+  // Fotoliste und Filter frisch einlesen
+  const reload = () => {
+    setItems(loadData('PHOTOS'));
+    setOpen(null);
+    if (fGroup !== 'Alle' && !groupOptions().includes(fGroup)) setFGroup('Alle');
+  };
 
   const visible = items.filter(p =>
     (fYear === 'Alle' || yearOf(p) === fYear) &&
@@ -380,14 +602,7 @@ function AdmGalerie({ onSave }) {
         action={<Btn onClick={add}>+ Foto hinzufügen</Btn>}
       />
 
-      <div className="adm-card">
-        <div className="adm-card-title">Einleitungstext der Galerie</div>
-        <p className="adm-card-desc">Steht auf der Galerie-Seite unter der Überschrift.</p>
-        <Fld label="Galerie-Text">
-          <Txt value={cfg.galleryTagline || ''} onChange={e => setCfg({...cfg, galleryTagline: e.target.value})} />
-        </Fld>
-        <Btn onClick={saveText}>Text speichern</Btn>
-      </div>
+      <AdmGallerySettings onSave={onSave} onChanged={reload} collapsible />
 
       <div className="adm-toolbar">
         <span className="adm-section-label" style={{ margin: 0 }}>Filter</span>
@@ -397,7 +612,7 @@ function AdmGalerie({ onSave }) {
         </Sel>
         <Sel value={fGroup} onChange={e => setFGroup(e.target.value)}>
           <option value="Alle">Alle Gruppen</option>
-          {GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
+          {groupOptions().map(g => <option key={g} value={g}>{g}</option>)}
         </Sel>
         <span className="adm-section-label right" style={{ margin: 0 }}>
           {visible.length} {visible.length === 1 ? 'Foto' : 'Fotos'} sichtbar
@@ -426,7 +641,7 @@ function AdmGalerie({ onSave }) {
                     </div>
                     <Fld label="Gruppe">
                       <Sel value={form.group} onChange={e => setForm({...form, group: e.target.value})}>
-                        {GROUP_OPTIONS.map(g => <option key={g}>{g}</option>)}
+                        {groupOptions().map(g => <option key={g}>{g}</option>)}
                       </Sel>
                     </Fld>
                     <Fld label="Album / Anlass">
@@ -805,6 +1020,7 @@ function AdmInfo({ onSave }) {
 // EINSTELLUNGEN
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdmSettings({ onSave }) {
+  const [section, setSection] = useAdmSt('galerie');
   const [pw, setPw] = useAdmSt('');
   const [pw2, setPw2] = useAdmSt('');
   const [err, setErr] = useAdmSt('');
@@ -820,7 +1036,7 @@ function AdmSettings({ onSave }) {
 
   const resetAll = () => {
     if (!confirm('Wirklich alle Änderungen zurücksetzen? Die Seite wird danach neu geladen.')) return;
-    ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','INTERNAL','SITE_CONFIG']
+    ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','INTERNAL','SITE_CONFIG']
       .forEach(k => localStorage.removeItem(PFX + k));
     onSave('Zurückgesetzt — lädt neu…');
     setTimeout(() => window.location.reload(), 1200);
@@ -828,6 +1044,15 @@ function AdmSettings({ onSave }) {
 
   return (
     <div>
+      <div className="adm-chips">
+        {[['galerie','📸 Galerie'],['zugang','🔑 Zugang'],['daten','♻️ Daten']].map(([id, label]) => (
+          <Chip key={id} active={section === id} onClick={() => setSection(id)}>{label}</Chip>
+        ))}
+      </div>
+
+      {section === 'galerie' && <AdmGallerySettings onSave={onSave} />}
+
+      {section === 'zugang' && (
       <div className="adm-card">
         <div className="adm-card-title">Admin-Passwort ändern</div>
         <p className="adm-card-desc">Gilt für die Anmeldung an diesem Panel (lokal im Browser gespeichert).</p>
@@ -840,14 +1065,19 @@ function AdmSettings({ onSave }) {
           <Btn type="submit">Passwort speichern</Btn>
         </form>
       </div>
+      )}
+
+      {section === 'daten' && (
       <div className="adm-card accent-red">
         <div className="adm-card-title">Alle Änderungen zurücksetzen</div>
         <p className="adm-card-desc">
           Setzt sämtliche im Admin gespeicherten Anpassungen auf den originalen
-          Datenstand der Website zurück — inklusive Galerie.
+          Datenstand der Website zurück — inklusive Galerie, Galerie-Gruppen und
+          Galerie-Einstellungen.
         </p>
         <Btn v="danger" onClick={resetAll}>Auf Standardwerte zurücksetzen</Btn>
       </div>
+      )}
     </div>
   );
 }
@@ -864,7 +1094,7 @@ const ADM_TABS = [
   { id: 'gruppen',  icon: '🏆', label: 'Gruppen',     title: 'Gruppen',         desc: 'Detailseiten von Garde, Musikzug und Präsidium.' },
   { id: 'sponsors', icon: '💼', label: 'Sponsoren',   title: 'Sponsoren',       desc: 'Partner und Förderer in drei Stufen.' },
   { id: 'internal', icon: '🔒', label: 'Intern',      title: 'Mitglieder-Inhalte', desc: 'Dokumente und Links im internen Bereich — je Rolle.' },
-  { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Zugang und Wiederherstellung des Original-Datenstands.' },
+  { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie-Darstellung, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
 ];
 
 function AdminPage({ navigate }) {

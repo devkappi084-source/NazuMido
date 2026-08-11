@@ -45,9 +45,9 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 
 | File | Exports to `window` |
 |---|---|
-| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
+| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
 | `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `NewsletterBlock`, `Footer`, `Modal` |
-| `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage` |
+| `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
 | `app.jsx` | Renders root; no exports (calls `ReactDOM.createRoot`) |
 
@@ -102,10 +102,12 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `SPONSORS_TIERS` — three tiers (`Hauptsponsor`, `Premium`, `Förderer`), each with `tier`, `color`, `desc`, `sponsors[]`
 - `SPONSORS` — flat array of sponsor names derived from `SPONSORS_TIERS`, used in the scrolling marquee
 - `PHOTOS` — gallery items with `id`, `src` (nullable), `title`, `date`, `year`, `group`, `album` (occasion), `size` (web res), `hdSize`
-- `PHOTO_GROUPS` — the four gallery groups (`Garde`, `Musikzug`, `Präsidium`, `Allgemein`), used by the gallery filter and the admin dropdown
+- `PHOTO_GROUPS` — the default gallery groups (`Garde`, `Musikzug`, `Präsidium`, `Allgemein`); editable in the admin under *Einstellungen › Galerie*
 - `photoYear(photo)` — helper that returns a photo's year, falling back to parsing `date` for older localStorage data written before `year` existed
+- `photoGroups()` — current gallery groups, read from `window.PHOTO_GROUPS` so admin overrides apply
+- `GALLERY_DEFAULTS` / `galleryConfig()` — gallery settings (texts, filters, sort order, `photosPerGroup`, `hdMembersOnly`, `showInNav`, HD section). `galleryConfig()` merges the defaults with `window.SITE_CONFIG.gallery` and is the only way gallery code should read these values — never read `SITE_CONFIG.gallery` directly, or admin overrides get missed
 - `DEMO_USERS` — hardcoded login credentials (see Auth section above)
-- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip`, `galleryTagline`)
+- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip`, `gallery`)
 - `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`
 
 ## Admin panels
@@ -119,7 +121,7 @@ There are two separate admin UIs, both styled with the Nazumido brand tokens
 | Worker dashboard | `/admin` + `/login`, `public/admin/`, `public/login.html` | D1 + R2 via `src/worker.js` | Beiträge and Einstellungen stored server-side |
 
 The React panel has two modes: *Schnellzugriff* (Events, Neuigkeiten, Galerie,
-Vereinsinfo) and *Vollzugriff* (all tabs). Tabs are declared in the `ADM_TABS`
+Vereinsinfo, Einstellungen) and *Vollzugriff* (all tabs). Tabs are declared in the `ADM_TABS`
 array in `admin.jsx` — add an entry there plus a render branch in `AdminPage`
 to add a new tab; `simple: true` also shows it in Schnellzugriff.
 
@@ -127,6 +129,20 @@ Its markup uses the `.adm-*` classes defined at the bottom of `styles.css`
 (`.adm-card`, `.adm-field`, `.adm-btn`, `.adm-navitem`, `.adm-photo-grid`, …)
 rather than inline styles — keep new admin UI on those classes so it stays in
 sync with the site design.
+
+### Galerie-Einstellungen
+
+`AdmGallerySettings` in `admin.jsx` is the single editor for everything about
+the gallery that is not a photo: page texts, filter/sort/badge display,
+`photosPerGroup`, the HD block and its release (`hdMembersOnly`), the nav link,
+and the gallery groups themselves. It is rendered twice — expanded in the
+**Einstellungen** tab (section *Galerie*) and collapsed at the top of the
+**Galerie** tab (`collapsible`), so both entry points edit the same state.
+
+Saving writes `SITE_CONFIG.gallery` plus `PHOTO_GROUPS`; renaming or deleting a
+group rewrites the `group` field of the affected photos (deleted groups fall
+back to `Allgemein`). The names `Garde`, `Musikzug` and `Präsidium` also drive
+the photo strips on the group sub-pages — renaming them empties those strips.
 
 Saving goes through `saveData(key, data)`, which writes `nzadm_<KEY>` to
 `localStorage` **and** updates `window[KEY]`, so the public pages reflect

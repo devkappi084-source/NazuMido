@@ -9,7 +9,7 @@ function TopBar({ route, navigate, user, onLogout }) {
     { id: 'vorsitz', label: 'Präsidium' },
     { id: 'galerie', label: 'Galerie' },
     { id: 'sponsoren', label: 'Sponsoren' },
-  ];
+  ].filter(it => it.id !== 'galerie' || galleryConfig().showInNav);
   const strip = SITE_CONFIG.topbarStrip;
   const [mobileOpen, setMobileOpen] = useState(false);
   return (
@@ -517,6 +517,7 @@ function NewsletterBlock() {
 // ---------- Footer ----------
 function Footer({ navigate }) {
   const link = (id) => (e) => { e.preventDefault(); navigate(id); };
+  const gallery = galleryConfig();
   return (
     <footer className="footer">
       <div className="container">
@@ -540,7 +541,7 @@ function Footer({ navigate }) {
               <li><a href="#garde" onClick={link('garde')}>Garde</a></li>
               <li><a href="#musikzug" onClick={link('musikzug')}>Musikzug</a></li>
               <li><a href="#vorsitz" onClick={link('vorsitz')}>Präsidium</a></li>
-              <li><a href="#galerie" onClick={link('galerie')}>Galerie</a></li>
+              {gallery.showInNav && <li><a href="#galerie" onClick={link('galerie')}>Galerie</a></li>}
               <li><a href="#sponsoren" onClick={link('sponsoren')}>Sponsoren</a></li>
             </ul>
           </div>
@@ -550,7 +551,7 @@ function Footer({ navigate }) {
               <li><a href="#login" onClick={link('login')}>Login</a></li>
               <li><a href="#login" onClick={link('login')}>Registrieren</a></li>
               <li><a href="#mitglieder" onClick={link('mitglieder')}>Interner Bereich</a></li>
-              <li><a href="#galerie" onClick={link('galerie')}>HD-Fotos</a></li>
+              {gallery.showInNav && <li><a href="#galerie" onClick={link('galerie')}>HD-Fotos</a></li>}
             </ul>
           </div>
           <div>
@@ -582,6 +583,8 @@ function Modal({ item, onClose, user }) {
   if (!item) return null;
   const isEvent = !!item.kind && item.d;
   const isPhoto = !!item.hdSize;
+  // HD-Download: entweder angemeldet oder in den Galerie-Einstellungen freigegeben
+  const hdOpen = !!user || !galleryConfig().hdMembersOnly;
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
@@ -606,10 +609,12 @@ function Modal({ item, onClose, user }) {
               </div>
               <h3>{item.title}</h3>
               <p>Diese Aufnahme stammt aus unserem Vereinsarchiv. Die Web-Vorschau steht allen Besucherinnen offen.</p>
-              {user ? (
+              {hdOpen ? (
                 <>
                   <p style={{ color: 'var(--green)', fontWeight: 500 }}>
-                    Als angemeldetes Mitglied ({user.role}) kannst du die HD-Version herunterladen — {item.hdSize}.
+                    {user
+                      ? `Als angemeldetes Mitglied (${user.role}) kannst du die HD-Version herunterladen — ${item.hdSize}.`
+                      : `Diese Galerie gibt die HD-Version für alle frei — ${item.hdSize}.`}
                   </p>
                   <div className="photo-modal-actions">
                     <button className="btn" onClick={() => alert(`HD-Download startet (${item.hdSize}) — Demo`)}>
