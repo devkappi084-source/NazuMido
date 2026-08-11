@@ -4,14 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Nazumido — Admin-Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/admin/admin.css" />
   </head>
   <body>
     <section class="login">
       <form id="login-form" class="login-card" novalidate>
-        <div class="logo">🎭</div>
-        <h1>Nazumido Admin</h1>
-        <p class="tag">Bitte melde dich an, um fortzufahren</p>
+        <div class="logo"><img src="/assets/logo.png" alt="Nazumido Wappen" /></div>
+        <div class="stripe" aria-hidden="true">
+          <span class="r"></span><span class="w"></span><span class="g"></span>
+        </div>
+        <h1>Verwaltung</h1>
+        <p class="tag">Faschingsverein Nazumido · seit 1962</p>
 
         <div id="login-error" class="err" hidden></div>
 
@@ -24,7 +30,7 @@
           <input id="password" name="password" type="password" autocomplete="current-password" required />
         </div>
 
-        <button id="login-submit" type="submit" class="btn block">🔑 Anmelden</button>
+        <button id="login-submit" type="submit" class="btn block">Anmelden →</button>
         <p class="hint">Standard (Entwicklung): <code>admin</code> / <code>nazumido</code></p>
       </form>
     </section>
