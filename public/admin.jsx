@@ -95,6 +95,16 @@ function Toggle({ label, desc, checked, onChange }) {
   );
 }
 
+// Großer Ein/Aus-Schalter (Laufschrift, Online-Reservierung)
+function PowerBtn({ on, onLabel, offLabel, onChange }) {
+  return (
+    <button className={'adm-power' + (on ? ' on' : '')}
+      aria-pressed={!!on} onClick={() => onChange(!on)}>
+      <span className="led" aria-hidden></span>{on ? onLabel : offLabel}
+    </button>
+  );
+}
+
 // Kopfzeile eines Bereichs
 function PanelHead({ title, desc, action }) {
   return (
@@ -193,6 +203,18 @@ function isUpcoming(ev) {
   return at >= new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
+// Wie steht es aktuell um die Online-Reservierung dieses Termins?
+function ticketStatusText(ev) {
+  const st = window.ticketState ? window.ticketState(ev) : null;
+  const lbl = d => (window.dateLabel ? window.dateLabel(d) : '');
+  if (!st) return '';
+  if (st.reason === 'open') return '● Reservierung ist offen — Besucher:innen können Plätze buchen.';
+  if (st.reason === 'soon') return `○ Reservierung öffnet automatisch am ${lbl(st.opensAt)}.`;
+  if (st.reason === 'past') return '○ Termin ist vorbei — es kann nicht mehr reserviert werden.';
+  if (st.reason === 'off')  return '○ Online-Reservierung ist global ausgeschaltet (Einstellungen › Tickets).';
+  return '○ Für diesen Termin nicht freigeschaltet.';
+}
+
 function AdmEvents({ onSave }) {
   const [items, setItems] = useAdmSt(() => loadData('EVENTS'));
   const [open, setOpen] = useAdmSt(null);
@@ -211,7 +233,7 @@ function AdmEvents({ onSave }) {
     setItems(next); saveData('EVENTS', next); setOpen(null); onSave('Event gelöscht');
   };
   const add = () => {
-    const ev = { id: uid(), d: '01', m: 'Jan', year: String(new Date().getFullYear() + 1), day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '' };
+    const ev = { id: uid(), d: '01', m: 'Jan', year: String(new Date().getFullYear() + 1), day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '', tickets: false };
     const next = [...items, ev];
     setItems(next); setOpen(ev.id); setForm({ ...ev });
   };
@@ -249,6 +271,33 @@ function AdmEvents({ onSave }) {
               <Fld label="Beschreibung">
                 <Txt value={form.desc} onChange={e => setForm({...form, desc: e.target.value})} />
               </Fld>
+
+              <span className="adm-section-label">Online-Reservierung</span>
+              <div className="adm-toggles" style={{ margin: '2px 0 12px' }}>
+                <Toggle label="Tickets online reservierbar"
+                  desc="Zeigt den Reservieren-Button in Terminliste und Detailfenster"
+                  checked={!!form.tickets} onChange={v => setForm({...form, tickets: v})} />
+              </div>
+              <p className="adm-card-desc" style={{ margin: '0 0 14px' }}>{ticketStatusText(form)}</p>
+              {form.tickets && (
+                <>
+                  <div className="adm-grid-2">
+                    <Fld label="Preis / Eintritt">
+                      <Inp value={form.price || ''} placeholder="28 € · Mitglieder 24 €"
+                        onChange={e => setForm({...form, price: e.target.value})} />
+                    </Fld>
+                    <Fld label="Kontingent (Plätze, optional)">
+                      <Inp type="number" min="0" value={form.seats || ''} placeholder="180"
+                        onChange={e => setForm({...form, seats: e.target.value ? Number(e.target.value) : undefined})} />
+                    </Fld>
+                  </div>
+                  <Fld label="Hinweis im Reservierungsformular (optional)">
+                    <Inp value={form.ticketNote || ''} placeholder="Tischreservierungen ab 6 Personen bitte vermerken."
+                      onChange={e => setForm({...form, ticketNote: e.target.value})} />
+                  </Fld>
+                </>
+              )}
+
               <div className="adm-actions">
                 <Btn onClick={() => save(ev.id)}>Speichern</Btn>
                 <Btn v="ghost" onClick={() => setOpen(null)}>Abbrechen</Btn>
@@ -263,11 +312,101 @@ function AdmEvents({ onSave }) {
               </div>
               <div className="grow">
                 <div className="t">{ev.title}</div>
-                <div className="m">{ev.time} · {ev.where || 'Ort offen'}</div>
+                <div className="m">
+                  {ev.time} · {ev.where || 'Ort offen'}
+                  {ev.tickets ? ' · 🎫 Reservierung' : ''}
+                </div>
               </div>
               <span className="x">bearbeiten →</span>
             </div>
           )}
+        </div>
+      ))}
+
+      <AdmReservations onSave={onSave} />
+    </div>
+  );
+}
+
+// ─── Eingegangene Reservierungen ──────────────────────────────────────────────
+// Ohne Backend liegen Reservierungen im localStorage des Browsers, in dem sie
+// abgeschickt wurden — hier sichtbar sind also die eigenen bzw. die an einem
+// gemeinsam genutzten Gerät angelegten.
+function AdmReservations({ onSave }) {
+  const [list, setList] = useAdmSt(() => (window.loadReservations ? window.loadReservations() : []));
+  const [shown, setShown] = useAdmSt(false);
+
+  const persist = (next, msg) => {
+    setList(next);
+    if (window.saveReservations) window.saveReservations(next);
+    if (msg) onSave(msg);
+  };
+  const del = id => {
+    if (!confirm('Reservierung löschen?')) return;
+    persist(list.filter(r => r.id !== id), 'Reservierung gelöscht');
+  };
+  const clear = () => {
+    if (!confirm(`Alle ${list.length} Reservierungen aus diesem Browser löschen?`)) return;
+    persist([], 'Reservierungen gelöscht');
+  };
+  const exportCsv = () => {
+    const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const rows = [['Code','Eingegangen','Veranstaltung','Termin','Name','E-Mail','Telefon','Plätze','Anmerkung']]
+      .concat(list.map(r => [r.code, r.at, r.eventTitle, r.eventDate, r.name, r.email, r.phone, r.count, r.note]));
+    const csv = '﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reservierungen-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const seats = list.reduce((a, r) => a + (parseInt(r.count, 10) || 0), 0);
+  const buckets = [];
+  list.forEach(r => {
+    let b = buckets.find(x => x.key === (r.eventId || r.eventTitle));
+    if (!b) { b = { key: r.eventId || r.eventTitle, title: r.eventTitle, date: r.eventDate, rows: [] }; buckets.push(b); }
+    b.rows.push(r);
+  });
+
+  return (
+    <div className="adm-card" style={{ marginTop: 26 }}>
+      <div className="adm-card-title">Reservierungen ({list.length})</div>
+      <p className="adm-card-desc">
+        {list.length
+          ? `${list.length} Anfrage${list.length === 1 ? '' : 'n'} · ${seats} Plätze reserviert.`
+          : 'Noch keine Reservierungen in diesem Browser.'}
+      </p>
+      <div className="adm-note">
+        Reservierungen werden im Browser der Besucher:in gespeichert und zusätzlich
+        per E-Mail an <code>{(window.ticketConfig ? window.ticketConfig().notifyEmail : '') || (window.SITE_CONFIG || {}).email}</code>
+        {' '}geschickt. Verlässlich ist der E-Mail-Eingang — diese Liste zeigt nur, was an diesem Gerät angelegt wurde.
+      </div>
+      <div className="adm-actions">
+        <Btn v="ghost" className="sm" onClick={() => setShown(s => !s)}>
+          {shown ? 'Liste einklappen' : 'Liste anzeigen'}
+        </Btn>
+        {!!list.length && <Btn v="ghost" className="sm" onClick={exportCsv}>Als CSV exportieren</Btn>}
+        {!!list.length && <Btn v="danger" className="sm right" onClick={clear}>Alle löschen</Btn>}
+      </div>
+      {shown && buckets.map(b => (
+        <div key={b.key} style={{ marginTop: 16 }}>
+          <span className="adm-section-label">{b.title} · {b.date}</span>
+          {b.rows.map(r => (
+            <div key={r.id} className="adm-res">
+              <div className="who">
+                <b>{r.name}</b> — {r.email}{r.phone ? ` · ${r.phone}` : ''}
+              </div>
+              <div className="seats">{r.count}</div>
+              <div className="meta">
+                {r.code} · {String(r.at || '').slice(0, 10)}
+                <button className="adm-iconbtn" style={{ marginLeft: 10 }}
+                  onClick={() => del(r.id)} aria-label="Reservierung löschen">✕</button>
+              </div>
+              {r.note && <div className="note">{r.note}</div>}
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -990,19 +1129,47 @@ function AdmInternal({ onSave }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // VEREINSINFO
 // ═══════════════════════════════════════════════════════════════════════════════
+// Vorlauf der Laufschrift in Tagen — eingestellt wird in Wochen
+function stripLeadDays(cfg) {
+  if (cfg.topbarStripWeeks !== undefined && cfg.topbarStripWeeks !== null && cfg.topbarStripWeeks !== '') {
+    const w = parseInt(cfg.topbarStripWeeks, 10);
+    return w > 0 ? w * 7 : 0;
+  }
+  const d = parseInt(cfg.topbarStripDays, 10);
+  return d > 0 ? d : 0;
+}
+
 // Zeigt an, ob die Laufschrift mit den aktuellen Terminen sichtbar wäre
 function stripPreview(cfg) {
-  const list = window.upcomingEvents ? window.upcomingEvents(cfg.topbarStripDays) : [];
-  if (!list.length) return 'Kein Termin im Zeitraum — Laufschrift bleibt ausgeblendet.';
+  if (cfg.topbarStripOnlyWithEvent === false) return 'Laufschrift läuft dauerhaft — unabhängig von den Terminen.';
+  const list = window.upcomingEvents ? window.upcomingEvents(stripLeadDays(cfg)) : [];
+  const weeks = parseInt(cfg.topbarStripWeeks, 10) > 0 ? parseInt(cfg.topbarStripWeeks, 10) : 0;
+  const range = weeks ? `in den nächsten ${weeks} Woche${weeks === 1 ? '' : 'n'}` : 'insgesamt';
+  if (!list.length) return `Kein Termin ${range} — Laufschrift bleibt ausgeblendet.`;
   const next = list[0];
-  return `${list.length} Termin${list.length > 1 ? 'e' : ''} anstehend, nächster: `
+  return `${list.length} Termin${list.length > 1 ? 'e' : ''} ${range} anstehend, nächster: `
     + `${next.title} (${next.d}. ${next.m}) — Laufschrift wird angezeigt.`;
 }
 
 function AdmInfo({ onSave }) {
-  const [cfg, setCfg] = useAdmSt(() => loadData('SITE_CONFIG'));
+  const [cfg, setCfg] = useAdmSt(() => {
+    const c = loadData('SITE_CONFIG');
+    // Altbestand: Vorlauf lag in Tagen vor, eingestellt wird jetzt in Wochen
+    if (c.topbarStripWeeks === undefined || c.topbarStripWeeks === null || c.topbarStripWeeks === '') {
+      const d = parseInt(c.topbarStripDays, 10);
+      c.topbarStripWeeks = d > 0 ? Math.ceil(d / 7) : 0;
+    }
+    return c;
+  });
   const f = k => ({ value: cfg[k] || '', onChange: e => setCfg({...cfg, [k]: e.target.value}) });
-  const save = () => { saveData('SITE_CONFIG', cfg); onSave('Vereinsinfo gespeichert'); };
+  const stripOn = cfg.topbarStripEnabled !== false;
+  const save = () => {
+    const next = { ...cfg };
+    const w = parseInt(next.topbarStripWeeks, 10);
+    next.topbarStripWeeks = w > 0 ? w : 0;
+    delete next.topbarStripDays; // ersetzt durch topbarStripWeeks
+    setCfg(next); saveData('SITE_CONFIG', next); onSave('Vereinsinfo gespeichert');
+  };
   return (
     <div>
       <div className="adm-card">
@@ -1029,32 +1196,172 @@ function AdmInfo({ onSave }) {
         </div>
       </div>
       <div className="adm-card">
-        <div className="adm-card-title">Laufschrift (Topbar)</div>
-        <p className="adm-card-desc">Ein Eintrag pro Zeile.</p>
-        <Txt style={{ minHeight: 110 }}
-          value={(cfg.topbarStrip || []).join('\n')}
-          onChange={e => setCfg({...cfg, topbarStrip: e.target.value.split('\n')})} />
-        <div style={{ marginTop: 16 }}>
-          <Toggle label="Nur bei anstehenden Terminen zeigen"
-            desc="Aus: Laufschrift läuft immer"
-            checked={cfg.topbarStripOnlyWithEvent !== false}
-            onChange={v => setCfg({...cfg, topbarStripOnlyWithEvent: v})} />
+        <div className="adm-card-title">Laufschrift (Leiste ganz oben)</div>
+        <p className="adm-card-desc">
+          Die schmale Leiste über der Navigation. Mit dem Schalter komplett ein- oder
+          ausblenden — oder alle Termine eintragen und einstellen, wie viele Wochen
+          vorher sie von selbst auftauchen soll.
+        </p>
+        <div className="adm-powerrow">
+          <PowerBtn on={stripOn}
+            onLabel="Leiste ist eingeschaltet" offLabel="Leiste ist ausgeschaltet"
+            onChange={v => setCfg({...cfg, topbarStripEnabled: v})} />
+          <span className="state">
+            {stripOn ? stripPreview(cfg) : 'Die Leiste bleibt ausgeblendet — unabhängig von den Terminen.'}
+          </span>
         </div>
-        {cfg.topbarStripOnlyWithEvent !== false && (
-          <div className="adm-grid-2" style={{ marginTop: 14 }}>
-            <Fld label="Vorlauf in Tagen (0 = jeder künftige Termin)">
-              <Inp type="number" min="0" value={cfg.topbarStripDays ?? 0}
-                onChange={e => setCfg({...cfg, topbarStripDays: e.target.value})} />
+        {stripOn && (
+          <>
+            <Fld label="Texte — ein Eintrag pro Zeile">
+              <Txt style={{ minHeight: 110 }}
+                value={(cfg.topbarStrip || []).join('\n')}
+                onChange={e => setCfg({...cfg, topbarStrip: e.target.value.split('\n')})} />
             </Fld>
-            <Fld label="Aktuell">
-              <div className="adm-card-desc" style={{ margin: '10px 0 0' }}>
-                {stripPreview(cfg)}
+            <div className="adm-toggles" style={{ marginTop: 4 }}>
+              <Toggle label="Nur bei anstehenden Terminen zeigen"
+                desc="Aus: Laufschrift läuft immer"
+                checked={cfg.topbarStripOnlyWithEvent !== false}
+                onChange={v => setCfg({...cfg, topbarStripOnlyWithEvent: v})} />
+            </div>
+            {cfg.topbarStripOnlyWithEvent !== false && (
+              <div className="adm-grid-2" style={{ marginTop: 14 }}>
+                <Fld label="Vorlauf in Wochen (0 = jeder künftige Termin)">
+                  <Inp type="number" min="0" value={cfg.topbarStripWeeks ?? 0}
+                    onChange={e => setCfg({...cfg, topbarStripWeeks: e.target.value})} />
+                </Fld>
+                <Fld label="Aktuell">
+                  <div className="adm-card-desc" style={{ margin: '10px 0 0' }}>
+                    {stripPreview(cfg)}
+                  </div>
+                </Fld>
               </div>
-            </Fld>
-          </div>
+            )}
+          </>
         )}
       </div>
       <Btn onClick={save}>Vereinsinfo speichern</Btn>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TICKET-EINSTELLUNGEN — Online-Reservierung für Veranstaltungen
+// ═══════════════════════════════════════════════════════════════════════════════
+function ticketCfg() {
+  return typeof ticketConfig === 'function'
+    ? ticketConfig()
+    : Object.assign({}, window.TICKET_DEFAULTS, (window.SITE_CONFIG || {}).tickets);
+}
+
+function AdmTicketSettings({ onSave }) {
+  const [cfg, setCfg] = useAdmSt(() => loadData('SITE_CONFIG'));
+  const [t, setT]     = useAdmSt(() => ticketCfg());
+
+  const set = (k, v) => setT({ ...t, [k]: v });
+  const txt = k => ({ value: t[k] || '', onChange: e => set(k, e.target.value) });
+  const events = (loadData('EVENTS') || []).filter(e => e.tickets);
+
+  const save = () => {
+    const max = parseInt(t.maxPerBooking, 10);
+    const weeks = parseInt(t.openWeeks, 10);
+    const next = {
+      ...cfg,
+      tickets: {
+        ...t,
+        maxPerBooking: max > 0 ? max : (window.TICKET_DEFAULTS || {}).maxPerBooking || 10,
+        openWeeks: weeks > 0 ? weeks : 0,
+      },
+    };
+    setCfg(next); setT(next.tickets);
+    saveData('SITE_CONFIG', next);
+    onSave('Ticket-Einstellungen gespeichert');
+  };
+
+  const reset = () => {
+    if (!confirm('Ticket-Einstellungen auf Standard zurücksetzen?')) return;
+    const defaults = { ...(window.TICKET_DEFAULTS || {}) };
+    const next = { ...cfg, tickets: defaults };
+    setCfg(next); setT(defaults);
+    saveData('SITE_CONFIG', next);
+    onSave('Ticket-Einstellungen zurückgesetzt');
+  };
+
+  return (
+    <div>
+      <div className="adm-card">
+        <div className="adm-card-title">Online-Reservierung</div>
+        <p className="adm-card-desc">
+          Hauptschalter für die Ticket-Reservierung. Welche Termine reservierbar
+          sind, stellst du beim jeweiligen Event unter <strong>Events</strong> ein.
+        </p>
+        <div className="adm-powerrow">
+          <PowerBtn on={t.enabled !== false}
+            onLabel="Reservierung ist eingeschaltet" offLabel="Reservierung ist ausgeschaltet"
+            onChange={v => set('enabled', v)} />
+          <span className="state">
+            {t.enabled === false
+              ? 'Auf der Website erscheinen keine Reservieren-Buttons.'
+              : (events.length
+                  ? `${events.length} Termin${events.length === 1 ? '' : 'e'} mit Reservierung: ${events.map(e => e.title).join(', ')}.`
+                  : 'Noch kein Termin für die Reservierung freigeschaltet — im Tab „Events" aktivieren.')}
+          </span>
+        </div>
+        <div className="adm-toggles">
+          <Toggle label="Button in der Terminliste" desc="Reservieren direkt aus der Event-Liste heraus"
+            checked={t.showInEvents !== false} onChange={v => set('showInEvents', v)} />
+          <Toggle label="Telefonnummer verpflichtend" desc="Aus: Telefon ist optional"
+            checked={!!t.requirePhone} onChange={v => set('requirePhone', v)} />
+          <Toggle label="E-Mail-Kopie anbieten" desc="Link „Reservierung per E-Mail senden“ nach dem Absenden"
+            checked={t.showMailCopy !== false} onChange={v => set('showMailCopy', v)} />
+        </div>
+      </div>
+
+      <div className="adm-card">
+        <div className="adm-card-title">Zeitraum & Umfang</div>
+        <p className="adm-card-desc">
+          Trag alle Termine ein — die Reservierung öffnet dann von selbst die
+          eingestellte Zahl an Wochen vor dem jeweiligen Termin und schließt am Eventtag.
+        </p>
+        <div className="adm-grid-3">
+          <Fld label="Reservierung öffnet … Wochen vorher (0 = sofort)">
+            <Inp type="number" min="0" value={t.openWeeks ?? 0}
+              onChange={e => set('openWeeks', e.target.value)} />
+          </Fld>
+          <Fld label="Plätze je Reservierung (max.)">
+            <Inp type="number" min="1" value={t.maxPerBooking ?? 10}
+              onChange={e => set('maxPerBooking', e.target.value)} />
+          </Fld>
+          <Fld label="Reservierungen an (E-Mail)">
+            <Inp {...txt('notifyEmail')} placeholder={(window.SITE_CONFIG || {}).email || 'Nazu.Mido@gmx.at'} />
+          </Fld>
+        </div>
+        <div className="adm-note">
+          {parseInt(t.openWeeks, 10) > 0
+            ? `Beispiel: Ein Termin am 14. Februar ist ab ${parseInt(t.openWeeks, 10)} Woche${parseInt(t.openWeeks, 10) === 1 ? '' : 'n'} davor reservierbar.`
+            : 'Alle freigeschalteten Termine sind sofort reservierbar.'}
+          {' '}Leere E-Mail bedeutet: Reservierungen gehen an die Vereinsadresse aus der Vereinsinfo.
+        </div>
+      </div>
+
+      <div className="adm-card">
+        <div className="adm-card-title">Texte</div>
+        <p className="adm-card-desc">Beschriftung und Texte im Reservierungsfenster.</p>
+        <div className="adm-grid-2">
+          <Fld label="Button-Text"><Inp {...txt('ctaLabel')} placeholder="Tickets reservieren" /></Fld>
+          <Fld label="Überschrift im Formular"><Inp {...txt('title')} placeholder="Tickets reservieren" /></Fld>
+        </div>
+        <Fld label="Einleitungstext"><Txt {...txt('lead')} /></Fld>
+        <div className="adm-grid-2">
+          <Fld label="Überschrift nach dem Absenden"><Inp {...txt('successTitle')} placeholder="Reservierung notiert!" /></Fld>
+          <Fld label="Text „keine Reservierung möglich“"><Inp {...txt('closedText')} /></Fld>
+        </div>
+        <Fld label="Bestätigungstext"><Txt {...txt('successText')} /></Fld>
+      </div>
+
+      <div className="adm-actions">
+        <Btn onClick={save}>Ticket-Einstellungen speichern</Btn>
+        <Btn v="ghost" className="right" onClick={reset}>Auf Standard zurücksetzen</Btn>
+      </div>
     </div>
   );
 }
@@ -1088,12 +1395,14 @@ function AdmSettings({ onSave }) {
   return (
     <div>
       <div className="adm-chips">
-        {[['galerie','📸 Galerie'],['zugang','🔑 Zugang'],['daten','♻️ Daten']].map(([id, label]) => (
+        {[['galerie','📸 Galerie'],['tickets','🎫 Tickets'],['zugang','🔑 Zugang'],['daten','♻️ Daten']].map(([id, label]) => (
           <Chip key={id} active={section === id} onClick={() => setSection(id)}>{label}</Chip>
         ))}
       </div>
 
       {section === 'galerie' && <AdmGallerySettings onSave={onSave} />}
+
+      {section === 'tickets' && <AdmTicketSettings onSave={onSave} />}
 
       {section === 'zugang' && (
       <div className="adm-card">
@@ -1137,7 +1446,7 @@ const ADM_TABS = [
   { id: 'gruppen',  icon: '🏆', label: 'Gruppen',     title: 'Gruppen',         desc: 'Detailseiten von Garde, Musikzug und Präsidium.' },
   { id: 'sponsors', icon: '💼', label: 'Sponsoren',   title: 'Sponsoren',       desc: 'Partner und Förderer in drei Stufen.' },
   { id: 'internal', icon: '🔒', label: 'Intern',      title: 'Mitglieder-Inhalte', desc: 'Dokumente und Links im internen Bereich — je Rolle.' },
-  { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie-Darstellung, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
+  { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie, Ticket-Reservierung, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
 ];
 
 function AdminPage({ navigate }) {

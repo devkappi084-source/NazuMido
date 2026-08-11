@@ -44,8 +44,8 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 
 | File | Exports to `window` |
 |---|---|
-| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
-| `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `NewsletterBlock`, `Footer`, `Modal` |
+| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `loadReservations`, `saveReservations`, `addReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
+| `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `NewsletterBlock`, `Footer`, `Modal`, `TicketForm` |
 | `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
 | `app.jsx` | Renders root; no exports (calls `ReactDOM.createRoot`) |
@@ -93,9 +93,11 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 ## Data model (all in `data.jsx`)
 
 - `NEWS` — array of news articles with `id`, `tag`, `tagColor`, optional `image`, `date`, `readTime`, `title`, `excerpt`, `body[]`, optional `feature` flag
-- `EVENTS` — array with `id`, `d` (day number), `m` (month abbrev), optional `year`, `day` (weekday), `title`, `kind`, `desc`, `time`, `where`
+- `EVENTS` — array with `id`, `d` (day number), `m` (month abbrev), optional `year`, `day` (weekday), `title`, `kind`, `desc`, `time`, `where`, plus the ticket fields `tickets` (bool — online reservation on/off for this date), `price`, `seats`, `ticketNote`
 - `eventDate(event)` / `upcomingEvents(days)` — date helpers for `EVENTS`. `eventDate` parses `d` + `m` (German or English month abbrev) with `year`, falling back to the current calendar year, so an event without a year counts as past once its date has passed. `upcomingEvents(days)` returns the future events sorted ascending, limited to the next `days` days when `days > 0`
-- `showTopbarStrip()` — whether the marquee in the `TopBar` renders. True when the strip has entries and an event is upcoming; `SITE_CONFIG.topbarStripOnlyWithEvent: false` makes it always show, `SITE_CONFIG.topbarStripDays` narrows the lead time. Both are editable in the admin under *Vereinsinfo › Laufschrift*
+- `siteConfig()` / `allEvents()` — read `SITE_CONFIG` / `EVENTS` through `window` so admin overrides apply. Bare `SITE_CONFIG` / `EVENTS` references resolve to the original module-level constants (the files are plain scripts, so `const` never lands on `window`) and silently miss admin edits — new code should use these helpers
+- `dateLabel(date)` / `eventDateLabel(event)` — German long-form date (`14. Februar 2026`)
+- `showTopbarStrip()` — whether the marquee in the `TopBar` renders. False when `SITE_CONFIG.topbarStripEnabled === false` (the on/off button in the admin) or the strip has no entries; otherwise it needs an upcoming event unless `topbarStripOnlyWithEvent: false`. `SITE_CONFIG.topbarStripWeeks` is the lead time in weeks (0 = every future date); `topbarStripLeadDays()` converts it and still understands the legacy `topbarStripDays`. All editable under *Vereinsinfo › Laufschrift*
 - `GROUPS` — array for the three groups: Garde, Musikzug, Vorsitz (drives the home-page `GroupsBlock`)
 - `PEOPLE` — board members with `id`, `initial`, `name`, `role`, `group`, `dotColor`, `bio`, `contact`
 - `TAGS` — filter tags for `NewsFeed`
@@ -107,9 +109,30 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `photoYear(photo)` — helper that returns a photo's year, falling back to parsing `date` for older localStorage data written before `year` existed
 - `photoGroups()` — current gallery groups, read from `window.PHOTO_GROUPS` so admin overrides apply
 - `GALLERY_DEFAULTS` / `galleryConfig()` — gallery settings (texts, filters, sort order, `photosPerGroup`, `hdMembersOnly`, `showInNav`, HD section). `galleryConfig()` merges the defaults with `window.SITE_CONFIG.gallery` and is the only way gallery code should read these values — never read `SITE_CONFIG.gallery` directly, or admin overrides get missed
+- `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
+- `ticketState(event)` — `{ open, reason, at, opensAt, cfg }` for one date. `reason` is `open`, `off` (master switch off), `event-off` (`tickets` not set on the event), `past`, or `soon` (still outside the `openWeeks` window — `opensAt` says when it opens). `reservableEvents()` returns the currently bookable dates, ascending
+- `loadReservations()` / `saveReservations(list)` / `addReservation(entry)` — reservation store in `localStorage` under `nazumido_reservations`; `addReservation` stamps `id`, `code` (e.g. `NZ-4F2QK`) and `at`
 - `DEMO_USERS` — hardcoded login credentials (see Auth section above)
-- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip` plus `topbarStripOnlyWithEvent` / `topbarStripDays`, `gallery`)
+- `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip` plus `topbarStripEnabled` / `topbarStripOnlyWithEvent` / `topbarStripWeeks`, `gallery`, `tickets`)
 - `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`
+
+## Ticket reservation
+
+Visitors reserve seats from the events band (`EventsBand`) or from the event
+detail modal: both hand the event to `Modal` with `_tickets: true`, which opens
+`TicketForm` (`components.jsx`) instead of the detail view. A date is bookable
+only when `ticketState(event).open` — i.e. the master switch is on, the event
+has `tickets: true`, the date is not past, and the `openWeeks` lead time has
+been reached. Non-bookable dates show a `.ticket-hint` box instead of the
+button ("Reservierung ab …" or the configurable `closedText`).
+
+Submitting writes the reservation to `localStorage` and offers a prefilled
+`mailto:` link to `tickets.notifyEmail` (falling back to `SITE_CONFIG.email`).
+**There is no backend for this**: the stored copy lives only in the visitor's
+browser, so the e-mail is the channel that actually reaches the club. The
+admin's *Reservierungen* list (Events tab, with CSV export) therefore only
+shows what was booked on that same device. Moving this to the Worker API (D1)
+is the same open step as for the rest of the content.
 
 ## Admin panel
 
@@ -137,9 +160,24 @@ array in `admin.jsx` — add an entry there plus a render branch in `AdminPage`
 to add a new tab; `simple: true` also shows it in Schnellzugriff.
 
 Its markup uses the `.adm-*` classes defined at the bottom of `styles.css`
-(`.adm-card`, `.adm-field`, `.adm-btn`, `.adm-navitem`, `.adm-photo-grid`, …)
-rather than inline styles — keep new admin UI on those classes so it stays in
-sync with the site design.
+(`.adm-card`, `.adm-field`, `.adm-btn`, `.adm-navitem`, `.adm-photo-grid`,
+`.adm-power`, …) rather than inline styles — keep new admin UI on those classes
+so it stays in sync with the site design.
+
+### Ticket-Einstellungen
+
+`AdmTicketSettings` (*Einstellungen › Tickets*) holds everything global about
+the online reservation: the `PowerBtn` master switch, the list-button and phone
+toggles, `openWeeks` / `maxPerBooking` / `notifyEmail`, and the form texts.
+Saving writes `SITE_CONFIG.tickets`. Which dates are bookable is per event in
+the **Events** tab (`tickets`, `price`, `seats`, `ticketNote`), where the editor
+also shows the live `ticketStatusText` for the date and `AdmReservations` lists
+the reservations stored in this browser.
+
+*Vereinsinfo › Laufschrift* uses the same `PowerBtn` for the topbar strip:
+`topbarStripEnabled` hides it outright, `topbarStripOnlyWithEvent` ties it to
+the calendar, and `topbarStripWeeks` sets how many weeks before a date it
+appears. Saving migrates the old `topbarStripDays` value to weeks and drops it.
 
 ### Galerie-Einstellungen
 
