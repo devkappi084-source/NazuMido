@@ -335,6 +335,7 @@ function AdmEvents({ onSave }) {
 function AdmReservations({ onSave }) {
   const [list, setList] = useAdmSt(() => (window.loadReservations ? window.loadReservations() : []));
   const [shown, setShown] = useAdmSt(false);
+  const [pick, setPick]   = useAdmSt('alle');   // Filter: 'alle' oder eventId/-titel
 
   const persist = (next, msg) => {
     setList(next);
@@ -349,33 +350,120 @@ function AdmReservations({ onSave }) {
     if (!confirm(`Alle ${list.length} Reservierungen aus diesem Browser löschen?`)) return;
     persist([], 'Reservierungen gelöscht');
   };
+
+  // Nach Termin gruppieren — jüngster Termin zuerst, innerhalb alphabetisch
+  const bucketsOf = (rows) => {
+    const out = [];
+    rows.forEach(r => {
+      const key = String(r.eventId || r.eventTitle || '—');
+      let b = out.find(x => x.key === key);
+      if (!b) { out.push(b = { key, title: r.eventTitle || 'Ohne Termin', date: r.eventDate || '', iso: r.eventIso || '', rows: [] }); }
+      b.rows.push(r);
+    });
+    out.sort((a, b) => String(a.iso).localeCompare(String(b.iso)));
+    out.forEach(b => {
+      b.rows = b.rows.slice().sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''), 'de'));
+      b.seats = b.rows.reduce((a, r) => a + (parseInt(r.count, 10) || 0), 0);
+    });
+    return out;
+  };
+
+  const filtered = pick === 'alle'
+    ? list
+    : list.filter(r => String(r.eventId || r.eventTitle) === pick);
+  const buckets = bucketsOf(filtered);
+  const seats = filtered.reduce((a, r) => a + (parseInt(r.count, 10) || 0), 0);
+  // Auswahlliste der Termine, für die es Reservierungen gibt
+  const picks = bucketsOf(list).map(b => ({ key: b.key, label: `${b.title}${b.date ? ' · ' + b.date : ''} (${b.rows.length})` }));
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const fileTag = pick === 'alle' ? 'alle' : (buckets[0] ? buckets[0].title : pick)
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
   const exportCsv = () => {
     const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const rows = [['Code','Eingegangen','Veranstaltung','Termin','Name','E-Mail','Telefon','Plätze','Anmerkung']]
-      .concat(list.map(r => [r.code, r.at, r.eventTitle, r.eventDate, r.name, r.email, r.phone, r.count, r.note]));
+    const rows = [['Code','Eingegangen','Veranstaltung','Termin','Uhrzeit','Ort','Name','E-Mail','Telefon','Plätze','Anmerkung']];
+    buckets.forEach(b => b.rows.forEach(r => rows.push(
+      [r.code, r.at, r.eventTitle, r.eventDate, r.eventTime, r.eventWhere, r.name, r.email, r.phone, r.count, r.note]
+    )));
     const csv = '﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `reservierungen-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `reservierungen-${fileTag}-${stamp}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
 
-  const seats = list.reduce((a, r) => a + (parseInt(r.count, 10) || 0), 0);
-  const buckets = [];
-  list.forEach(r => {
-    let b = buckets.find(x => x.key === (r.eventId || r.eventTitle));
-    if (!b) { b = { key: r.eventId || r.eventTitle, title: r.eventTitle, date: r.eventDate, rows: [] }; buckets.push(b); }
-    b.rows.push(r);
-  });
+  // Druckansicht: eigener Tab mit Teilnehmerliste je Termin
+  const printList = () => {
+    const esc = v => String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const club = window.SITE_CONFIG || {};
+    const body = buckets.map(b => `
+      <section>
+        <h2>${esc(b.title)}</h2>
+        <p class="when">${esc(b.date)}${b.rows[0] && b.rows[0].eventTime ? ' · ' + esc(b.rows[0].eventTime) : ''}${b.rows[0] && b.rows[0].eventWhere ? ' · ' + esc(b.rows[0].eventWhere) : ''}</p>
+        <table>
+          <thead><tr><th>Name</th><th>Kontakt</th><th class="n">Plätze</th><th>Kennung</th><th>Anmerkung</th><th class="box">Da</th></tr></thead>
+          <tbody>
+            ${b.rows.map(r => `<tr>
+              <td><strong>${esc(r.name)}</strong></td>
+              <td>${esc(r.email)}${r.phone ? '<br>' + esc(r.phone) : ''}</td>
+              <td class="n">${esc(r.count)}</td>
+              <td class="mono">${esc(r.code)}</td>
+              <td>${esc(r.note)}</td>
+              <td class="box"></td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot><tr><td colspan="2">${b.rows.length} Reservierung${b.rows.length === 1 ? '' : 'en'}</td><td class="n">${b.seats}</td><td colspan="3"></td></tr></tfoot>
+        </table>
+      </section>`).join('');
+
+    const html = `<!doctype html><html lang="de"><head><meta charset="utf-8">
+      <title>Reservierungen ${esc(stamp)}</title>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #16140F; margin: 32px; }
+        header { border-bottom: 3px solid #C8202C; padding-bottom: 12px; margin-bottom: 26px; }
+        header h1 { font-size: 22px; margin: 0 0 4px; }
+        header p { margin: 0; font-size: 12px; color: #7C7363; letter-spacing: 0.06em; text-transform: uppercase; }
+        section { margin-bottom: 34px; page-break-inside: avoid; }
+        section h2 { font-size: 17px; margin: 0 0 2px; color: #9C1822; }
+        .when { margin: 0 0 12px; font-size: 12px; color: #7C7363; }
+        table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid rgba(22,20,15,0.15); vertical-align: top; }
+        thead th { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #7C7363; border-bottom: 1px solid #16140F; }
+        tfoot td { font-weight: 600; border-top: 1px solid #16140F; border-bottom: 0; }
+        .n { text-align: right; white-space: nowrap; }
+        .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+        .box { width: 34px; }
+        tbody .box { border-left: 1px solid rgba(22,20,15,0.15); }
+        footer { margin-top: 30px; font-size: 11px; color: #7C7363; border-top: 1px solid rgba(22,20,15,0.15); padding-top: 10px; }
+        @media print { body { margin: 12mm; } }
+      </style></head><body>
+      <header>
+        <h1>Reservierungen — Faschingsverein Nazumido</h1>
+        <p>${esc(pick === 'alle' ? 'Alle Termine' : (buckets[0] ? buckets[0].title : ''))} · Stand ${esc(new Date().toLocaleDateString('de-AT'))} · ${filtered.length} Reservierung${filtered.length === 1 ? '' : 'en'} · ${seats} ${seats === 1 ? 'Platz' : 'Plätze'}</p>
+      </header>
+      ${body || '<p>Keine Reservierungen.</p>'}
+      <footer>${esc(club.address || '')}${club.city ? ', ' + esc(club.city) : ''} · ${esc(club.email || '')}${club.phone ? ' · ' + esc(club.phone) : ''}</footer>
+      </body></html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { alert('Der Browser hat das Druckfenster blockiert — bitte Pop-ups für diese Seite erlauben.'); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { try { win.print(); } catch (e) {} }, 250);
+  };
 
   return (
     <div className="adm-card" style={{ marginTop: 26 }}>
       <div className="adm-card-title">Reservierungen ({list.length})</div>
       <p className="adm-card-desc">
         {list.length
-          ? `${list.length} Anfrage${list.length === 1 ? '' : 'n'} · ${seats} Plätze reserviert.`
+          ? `${filtered.length} Anfrage${filtered.length === 1 ? '' : 'n'} · ${seats} Plätze${pick === 'alle' ? ' insgesamt' : ' für diesen Termin'}.`
           : 'Noch keine Reservierungen in diesem Browser.'}
       </p>
       <div className="adm-note">
@@ -383,16 +471,25 @@ function AdmReservations({ onSave }) {
         per E-Mail an <code>{(window.ticketConfig ? window.ticketConfig().notifyEmail : '') || (window.SITE_CONFIG || {}).email}</code>
         {' '}geschickt. Verlässlich ist der E-Mail-Eingang — diese Liste zeigt nur, was an diesem Gerät angelegt wurde.
       </div>
+      {!!picks.length && (
+        <Fld label="Termin">
+          <Sel value={pick} onChange={e => setPick(e.target.value)}>
+            <option value="alle">Alle Termine ({list.length})</option>
+            {picks.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </Sel>
+        </Fld>
+      )}
       <div className="adm-actions">
         <Btn v="ghost" className="sm" onClick={() => setShown(s => !s)}>
           {shown ? 'Liste einklappen' : 'Liste anzeigen'}
         </Btn>
-        {!!list.length && <Btn v="ghost" className="sm" onClick={exportCsv}>Als CSV exportieren</Btn>}
+        {!!filtered.length && <Btn className="sm" onClick={printList}>Liste drucken</Btn>}
+        {!!filtered.length && <Btn v="ghost" className="sm" onClick={exportCsv}>Als CSV exportieren</Btn>}
         {!!list.length && <Btn v="danger" className="sm right" onClick={clear}>Alle löschen</Btn>}
       </div>
       {shown && buckets.map(b => (
         <div key={b.key} style={{ marginTop: 16 }}>
-          <span className="adm-section-label">{b.title} · {b.date}</span>
+          <span className="adm-section-label">{b.title} · {b.date} · {b.seats} Plätze</span>
           {b.rows.map(r => (
             <div key={r.id} className="adm-res">
               <div className="who">
@@ -409,6 +506,9 @@ function AdmReservations({ onSave }) {
           ))}
         </div>
       ))}
+      {shown && !buckets.length && (
+        <p className="adm-card-desc" style={{ marginTop: 14 }}>Für diesen Termin liegen keine Reservierungen vor.</p>
+      )}
     </div>
   );
 }
@@ -1309,6 +1409,8 @@ function AdmTicketSettings({ onSave }) {
         <div className="adm-toggles">
           <Toggle label="Button in der Terminliste" desc="Reservieren direkt aus der Event-Liste heraus"
             checked={t.showInEvents !== false} onChange={v => set('showInEvents', v)} />
+          <Toggle label="Eigener Tab für die Reservierung" desc="Aus: Reservierung öffnet im Fenster über dem Termin"
+            checked={t.openInNewTab !== false} onChange={v => set('openInNewTab', v)} />
           <Toggle label="Telefonnummer verpflichtend" desc="Aus: Telefon ist optional"
             checked={!!t.requirePhone} onChange={v => set('requirePhone', v)} />
           <Toggle label="E-Mail-Kopie anbieten" desc="Link „Reservierung per E-Mail senden“ nach dem Absenden"

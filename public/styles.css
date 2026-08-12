@@ -695,15 +695,15 @@ section.block {
   color: var(--ink-2);
 }
 
-/* ---------- Newsletter ---------- */
-.newsletter {
+/* ---------- Kontaktband ---------- */
+.contactband {
   background: var(--red);
   color: var(--paper);
   padding: 100px 0;
   position: relative;
   overflow: hidden;
 }
-.newsletter::before {
+.contactband::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -712,27 +712,47 @@ section.block {
     radial-gradient(circle at 90% 10%, rgba(22,20,15,0.4), transparent 50%);
   pointer-events: none;
 }
-.newsletter .container { position: relative; z-index: 1; }
-.newsletter-grid {
+.contactband .container { position: relative; z-index: 1; }
+.contactband-grid {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
   gap: 48px;
   align-items: center;
 }
-@media (max-width: 880px) { .newsletter-grid { grid-template-columns: 1fr; } }
-.newsletter h2 { color: var(--paper); }
-.newsletter .eyebrow { color: rgba(255,255,255,0.7); }
-.newsletter p { color: rgba(255,255,255,0.85); font-size: 16px; max-width: 480px; }
+@media (max-width: 880px) { .contactband-grid { grid-template-columns: 1fr; } }
+.contactband h2 { color: var(--paper); }
+.contactband .eyebrow { color: rgba(255,255,255,0.7); }
+.contactband p { color: rgba(255,255,255,0.85); font-size: 16px; max-width: 480px; }
 
-.signup {
+.contact-card {
   background: var(--paper);
   color: var(--ink);
   padding: 32px;
   border-radius: 8px;
   box-shadow: 0 30px 60px -30px rgba(22,20,15,0.5);
 }
-.signup h3 { font-size: 26px; margin-bottom: 4px; }
-.signup .sub { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
+.contact-card h3 { font-size: 26px; margin-bottom: 20px; }
+.contact-list { list-style: none; margin: 0; padding: 0; }
+.contact-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.contact-list li:last-child { border-bottom: 0; }
+.contact-list li span {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  padding-top: 3px;
+}
+.contact-list li strong { font-weight: 500; text-align: right; font-size: 15px; }
+.contact-list li a { color: var(--red); text-decoration: none; }
+.contact-list li a:hover { text-decoration: underline; }
 .field {
   display: block;
   margin-bottom: 14px;
@@ -785,15 +805,6 @@ section.block {
 .chip-check .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--line); }
 .chip-check.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .chip-check.on .dot { background: var(--red); }
-
-.signup-success {
-  background: var(--green);
-  color: var(--paper);
-  padding: 32px;
-  border-radius: 8px;
-  text-align: center;
-}
-.signup-success h3 { color: var(--paper); }
 
 /* ---------- Footer ---------- */
 footer.footer {
@@ -1954,6 +1965,47 @@ footer.footer {
   letter-spacing: 0.16em;
 }
 .ticket-done .photo-modal-actions a.btn { text-decoration: none; }
+
+/* ---------- Reservierungsseite (#reservierung) ---------- */
+.reservation-panel {
+  max-width: 680px;
+  margin: 0 auto;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 34px;
+  box-shadow: 0 30px 60px -40px rgba(22,20,15,0.4);
+}
+@media (max-width: 560px) { .reservation-panel { padding: 22px; } }
+.reservation-picks { list-style: none; margin: 0; padding: 0; }
+.reservation-picks li { border-top: 1px solid var(--line); }
+.reservation-picks a {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 0;
+  text-decoration: none;
+  color: var(--ink);
+}
+.reservation-picks a:hover strong { color: var(--red); }
+.reservation-picks a span {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* Druckansicht der Reservierungsbestätigung: nur der Beleg */
+@media print {
+  .topbar, .footer, .subhero, .btn, .ticket-back { display: none !important; }
+  .reservation-panel {
+    max-width: none;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+  .block { padding: 0 !important; }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Admin-Panel (#admin) — im Nazumido-Design

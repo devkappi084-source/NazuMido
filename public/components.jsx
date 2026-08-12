@@ -221,12 +221,12 @@ function NewsFeed({ onOpen }) {
       <div className="container">
         <div className="section-head">
           <div>
-            <span className="eyebrow">Aktuelles · Newsletter</span>
+            <span className="eyebrow">Aktuelles</span>
             <h2 style={{ marginTop: 14 }}>Aus dem <span className="italic" style={{color:'var(--red)'}}>Vereinsleben</span></h2>
           </div>
           <p className="lead">
             Rückblicke, Ankündigungen und Geschichten — jeden Monat frisch
-            aus dem Hofnarrenkessel. Auch als Newsletter direkt ins Postfach.
+            aus dem Hofnarrenkessel.
           </p>
         </div>
 
@@ -266,11 +266,24 @@ function NewsFeed({ onOpen }) {
   );
 }
 
+// Reservierung in einem eigenen Browser-Tab öffnen (#reservierung/<event-id>).
+// Gibt false zurück, wenn das nicht gewünscht oder vom Popup-Blocker verhindert
+// wurde — dann übernimmt wie bisher das Modal.
+function openTicketTab(event) {
+  if (!event || ticketConfig().openInNewTab === false) return false;
+  const url = `${window.location.pathname}${window.location.search}#reservierung/${event.id}`;
+  const win = window.open(url, '_blank', 'noopener');
+  if (!win) return false;
+  try { win.focus(); } catch (e) {}
+  return true;
+}
+
 // ---------- Events ----------
 function EventsBand({ onOpen }) {
   const cfg = ticketConfig();
-  // Reservierung direkt aus der Liste heraus öffnen (Modal startet im Formular)
-  const openTickets = (e, ev) => { ev.stopPropagation(); onOpen({ ...e, _tickets: true }); };
+  // Reservierung öffnen: eigener Tab, sonst Modal direkt im Formular
+  const startTickets = (e) => { if (!openTicketTab(e)) onOpen({ ...e, _tickets: true }); };
+  const openTickets = (e, ev) => { ev.stopPropagation(); startTickets(e); };
   const nextTicketEvent = reservableEvents()[0];
   return (
     <section className="block events-band" id="events">
@@ -336,7 +349,7 @@ function EventsBand({ onOpen }) {
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {nextTicketEvent && (
-              <button className="btn" onClick={() => onOpen({ ...nextTicketEvent, _tickets: true })}>
+              <button className="btn" onClick={() => startTickets(nextTicketEvent)}>
                 {cfg.ctaLabel}
               </button>
             )}
@@ -348,8 +361,10 @@ function EventsBand({ onOpen }) {
   );
 }
 
-// ---------- Ticket-Reservierung (im Event-Modal) ----------
-function TicketForm({ event, onBack }) {
+// ---------- Ticket-Reservierung (Event-Modal oder eigene Seite) ----------
+// `standalone` = eigener Tab (#reservierung): breitere Darstellung, Druck-Button
+// und Hinweis, dass die Reservierung in der Vereinsliste liegt.
+function TicketForm({ event, onBack, backLabel, standalone }) {
   const cfg = ticketConfig();
   const [form, setForm] = useState({ name: '', email: '', phone: '', count: 2, note: '' });
   const [err, setErr] = useState('');
@@ -365,10 +380,13 @@ function TicketForm({ event, onBack }) {
     if (!form.email.trim()) { setErr('Ohne E-Mail-Adresse können wir die Reservierung nicht bestätigen.'); return; }
     if (cfg.requirePhone && !form.phone.trim()) { setErr('Bitte gib eine Telefonnummer an.'); return; }
     if (!(count > 0) || count > max) { setErr(`Bitte 1 bis ${max} Plätze wählen.`); return; }
+    const at = eventDate(event);
     setDone(addReservation({
       eventId: event.id,
       eventTitle: event.title,
       eventDate: when,
+      // ISO-Datum für Sortierung und Filter in der Admin-Liste
+      eventIso: at ? `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}` : '',
       eventTime: event.time || '',
       eventWhere: event.where || '',
       name: form.name.trim(),
@@ -399,6 +417,7 @@ function TicketForm({ event, onBack }) {
         <ul className="ticket-summary">
           <li><span>Veranstaltung</span><strong>{done.eventTitle}</strong></li>
           <li><span>Termin</span><strong>{done.eventDate}{done.eventTime ? ` · ${done.eventTime}` : ''}</strong></li>
+          {done.eventWhere && <li><span>Ort</span><strong>{done.eventWhere}</strong></li>}
           <li><span>Plätze</span><strong>{done.count}</strong></li>
           <li><span>Auf den Namen</span><strong>{done.name}</strong></li>
         </ul>
@@ -406,15 +425,24 @@ function TicketForm({ event, onBack }) {
           {cfg.showMailCopy && to && (
             <a className="btn" href={mailto}>Reservierung per E-Mail senden</a>
           )}
-          <button className="btn outline-dark" onClick={onBack}>Zurück zum Termin</button>
+          {standalone && (
+            <button className="btn outline-dark" onClick={() => window.print()}>Bestätigung drucken</button>
+          )}
+          <button className="btn outline-dark" onClick={onBack}>{backLabel || 'Zurück zum Termin'}</button>
         </div>
+        {standalone && (
+          <p className="ticket-fineprint" style={{ marginTop: 18 }}>
+            Deine Reservierung liegt jetzt unter der Kennung <strong>{done.code}</strong> in
+            unserer Liste. Notiere sie dir — an der Abendkasse genügt sie zusammen mit deinem Namen.
+          </p>
+        )}
       </div>
     );
   }
 
   return (
     <form className="ticket-form" onSubmit={submit}>
-      <button type="button" className="ticket-back" onClick={onBack}>← Zurück zum Termin</button>
+      <button type="button" className="ticket-back" onClick={onBack}>{backLabel || '← Zurück zum Termin'}</button>
       <h3>{cfg.title}</h3>
       <p className="ticket-lead">{cfg.lead}</p>
       <ul className="ticket-summary">
@@ -555,99 +583,38 @@ function PeopleBlock() {
   );
 }
 
-// ---------- Newsletter block (signup) ----------
-function NewsletterBlock() {
-  const [topics, setTopics] = useState(['Events', 'Garde']);
-  const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({ first: '', last: '', email: '', kind: 'Fan / Interessent' });
-  const allTopics = ['Events', 'Garde', 'Musikzug', 'Präsidium', 'Mitgliedschaft'];
-  const toggle = t => setTopics(topics.includes(t) ? topics.filter(x => x !== t) : [...topics, t]);
-
-  const submit = (e) => {
-    e.preventDefault();
-    if (!form.email) return;
-    setSubmitted(true);
-  };
-
+// ---------- Kontaktblock ----------
+function ContactBlock() {
+  const cfg = siteConfig();
   return (
-    <section className="newsletter" id="kontakt">
+    <section className="contactband" id="kontakt">
       <div className="container">
-        <div className="newsletter-grid">
+        <div className="contactband-grid">
           <div>
-            <span className="eyebrow">Newsletter & Kontakt</span>
+            <span className="eyebrow">Kontakt</span>
             <h2 style={{ marginTop: 14 }}>
-              Bleib am <br/><span className="italic">närrischen</span> Puls.
+              Schreib uns —<br/>wir sind <span className="italic">für dich da</span>.
             </h2>
             <p style={{ marginTop: 22 }}>
-              Einmal im Monat schicken wir dir die wichtigsten Neuigkeiten:
-              Termine, Rückblicke, Anekdoten. Kein Spam, nur Schalk.
+              Fragen zu Terminen, Karten oder einer Mitgliedschaft? Melde dich
+              einfach per Mail oder Telefon — wir antworten so schnell es der
+              Fasching zulässt.
             </p>
-            <div style={{ marginTop: 36, fontSize: 14, color: 'rgba(255,255,255,0.78)' }}>
-              <strong style={{ color: 'white' }}>Adresse:</strong> {SITE_CONFIG.address}, {SITE_CONFIG.city}<br/>
-              <strong style={{ color: 'white' }}>Mail:</strong> {SITE_CONFIG.email} &nbsp;·&nbsp;
-              <strong style={{ color: 'white' }}>Web:</strong>{' '}
-              <a href={SITE_CONFIG.website} style={{ color: 'rgba(255,255,255,0.78)' }} target="_blank" rel="noopener noreferrer">{SITE_CONFIG.websiteLabel}</a>
-            </div>
           </div>
 
-          <div>
-            {!submitted ? (
-              <form className="signup" onSubmit={submit}>
-                <h3>Newsletter abonnieren</h3>
-                <div className="sub">Kostenlos · monatlich · jederzeit kündbar</div>
-                <div className="field-row">
-                  <div className="field">
-                    <label>Vorname</label>
-                    <input value={form.first} onChange={e => setForm({...form, first: e.target.value})} placeholder="z.B. Anna" />
-                  </div>
-                  <div className="field">
-                    <label>Nachname</label>
-                    <input value={form.last} onChange={e => setForm({...form, last: e.target.value})} placeholder="z.B. Berger" />
-                  </div>
-                </div>
-                <div className="field">
-                  <label>E-Mail Adresse</label>
-                  <input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="anna@example.at" />
-                </div>
-                <div className="field">
-                  <label>Ich bin…</label>
-                  <select value={form.kind} onChange={e => setForm({...form, kind: e.target.value})}>
-                    <option>Fan / Interessent</option>
-                    <option>Aktives Mitglied</option>
-                    <option>Eltern / Erziehungsberechtigte</option>
-                    <option>Sponsor / Partner</option>
-                  </select>
-                </div>
-                <label style={{ display: 'block', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 8 }}>
-                  Themen, die mich interessieren
-                </label>
-                <div className="checks">
-                  {allTopics.map(t => (
-                    <button type="button" key={t}
-                      className={"chip-check" + (topics.includes(t) ? ' on' : '')}
-                      onClick={() => toggle(t)}>
-                      <span className="dot"></span>{t}
-                    </button>
-                  ))}
-                </div>
-                <button type="submit" className="btn" style={{ width: '100%', justifyContent: 'center' }}>
-                  Newsletter abonnieren →
-                </button>
-              </form>
-            ) : (
-              <div className="signup-success">
-                <h3 style={{ fontSize: 32 }}>Helau! 🎉</h3>
-                <p style={{ color: 'rgba(255,255,255,0.9)', marginTop: 8 }}>
-                  Danke, {form.first || 'liebe:r Freund:in'}.<br/>
-                  Wir haben dir eine Bestätigung an<br/>
-                  <strong>{form.email}</strong> geschickt.
-                </p>
-                <button className="btn ink" style={{ marginTop: 18 }}
-                  onClick={() => { setSubmitted(false); setForm({first:'',last:'',email:'',kind:'Fan / Interessent'}); }}>
-                  Noch jemanden anmelden
-                </button>
-              </div>
-            )}
+          <div className="contact-card">
+            <h3>Faschingsverein Nazumido</h3>
+            <ul className="contact-list">
+              <li><span>Adresse</span><strong>{cfg.address}<br/>{cfg.city}</strong></li>
+              <li><span>Telefon</span><strong><a href={`tel:${String(cfg.phone || '').replace(/\s/g, '')}`}>{cfg.phone}</a></strong></li>
+              <li><span>E-Mail</span><strong><a href={`mailto:${cfg.email}`}>{cfg.email}</a></strong></li>
+              <li><span>Web</span><strong>
+                <a href={cfg.website} target="_blank" rel="noopener noreferrer">{cfg.websiteLabel}</a>
+              </strong></li>
+            </ul>
+            <a className="btn" href={`mailto:${cfg.email}`} style={{ marginTop: 24 }}>
+              E-Mail schreiben →
+            </a>
           </div>
         </div>
       </div>
@@ -815,7 +782,7 @@ function Modal({ item, onClose, user }) {
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 22, flexWrap: 'wrap' }}>
                 {ticketState(item).open && (
-                  <button className="btn" onClick={() => setTickets(true)}>
+                  <button className="btn" onClick={() => { if (!openTicketTab(item)) setTickets(true); }}>
                     {ticketConfig().ctaLabel}
                   </button>
                 )}
@@ -848,5 +815,5 @@ function Modal({ item, onClose, user }) {
 
 Object.assign(window, {
   TopBar, Hero, Welcome, NewsFeed, EventsBand, SponsorsMarquee,
-  GroupsBlock, PeopleBlock, NewsletterBlock, Footer, Modal, TicketForm,
+  GroupsBlock, PeopleBlock, ContactBlock, Footer, Modal, TicketForm, openTicketTab,
 });

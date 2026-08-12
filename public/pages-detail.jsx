@@ -564,6 +564,95 @@ function VorsitzPage({ navigate, onOpenPhoto }) {
 }
 
 // ---------- Sponsors Page ----------
+// ---------- Reservierungsseite (#reservierung/<event-id>) ----------
+// Wird in einem eigenen Tab geöffnet, sofern „Eigener Tab" in den
+// Ticket-Einstellungen aktiv ist. Die Reservierung landet in derselben Liste
+// (localStorage) wie im Modal — der Admin exportiert bzw. druckt sie von dort.
+function ReservationPage({ eventId, navigate }) {
+  const cfg = ticketConfig();
+  const event = eventId ? findEvent(eventId) : null;
+  const st = event ? ticketState(event) : null;
+  const open = !!(st && st.open);
+  const options = reservableEvents();
+
+  const facts = event
+    ? [
+        { label: 'Termin', value: eventDateLabel(event) },
+        { label: 'Beginn', value: event.time || '—' },
+        { label: 'Ort', value: event.where || '—' },
+        { label: 'Preis', value: event.price || 'Freier Eintritt' },
+      ]
+    : [
+        { label: 'Termine offen', value: String(options.length) },
+        { label: 'Plätze je Buchung', value: `max. ${cfg.maxPerBooking}` },
+        { label: 'Bestätigung', value: 'per E-Mail' },
+      ];
+
+  // Warum ist gerade nicht reservierbar?
+  const closedText = !event
+    ? 'Dieser Termin ist nicht (mehr) im Kalender.'
+    : st.reason === 'past'
+    ? 'Dieser Termin ist bereits vorbei.'
+    : st.reason === 'soon'
+    ? `Die Reservierung öffnet am ${dateLabel(st.opensAt)}.`
+    : cfg.closedText;
+
+  return (
+    <>
+      <SubHero
+        kicker="Online-Reservierung"
+        title={event ? accentTitle(event.title, 'var(--gold)') : accentTitle('Tickets reservieren', 'var(--gold)')}
+        tagline={cfg.lead}
+        facts={facts}
+        breadcrumb="Reservierung"
+        navigate={navigate}
+      />
+      <section className="block">
+        <div className="container">
+          <div className="reservation-panel">
+            {event && open ? (
+              <TicketForm
+                event={event}
+                standalone
+                backLabel="← Zurück zur Startseite"
+                onBack={() => navigate('home')}
+              />
+            ) : (
+              <div className="ticket-form">
+                <button type="button" className="ticket-back" onClick={() => navigate('home')}>
+                  ← Zurück zur Startseite
+                </button>
+                <h3>{event ? event.title : 'Termin wählen'}</h3>
+                <div className="ticket-hint">
+                  <strong>🎫 Keine Reservierung möglich</strong>
+                  <span>{closedText}</span>
+                </div>
+                {!!options.length && (
+                  <>
+                    <p className="ticket-lead" style={{ marginTop: 22 }}>
+                      {event ? 'Für diese Termine kannst du stattdessen reservieren:' : 'Für diese Termine ist die Reservierung offen:'}
+                    </p>
+                    <ul className="reservation-picks">
+                      {options.map(ev => (
+                        <li key={ev.id}>
+                          <a href={`#reservierung/${ev.id}`} onClick={e => { e.preventDefault(); navigate(`reservierung/${ev.id}`); }}>
+                            <strong>{ev.title}</strong>
+                            <span>{eventDateLabel(ev)}{ev.time ? ` · ${ev.time}` : ''}{ev.where ? ` · ${ev.where}` : ''}</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
 function SponsorsPage({ navigate }) {
   const totalCount = SPONSORS_TIERS.reduce((acc, t) => acc + t.sponsors.length, 0);
   return (
@@ -640,5 +729,5 @@ function SponsorsPage({ navigate }) {
 
 Object.assign(window, {
   SubHero, PhotoCard, GroupPhotos, GaleriePage, accentTitle,
-  GardePage, MusikzugPage, VorsitzPage, SponsorsPage,
+  GardePage, MusikzugPage, VorsitzPage, SponsorsPage, ReservationPage,
 });

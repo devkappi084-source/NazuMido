@@ -517,6 +517,7 @@ const TICKET_DEFAULTS = {
   requirePhone:   false,   // Telefonnummer als Pflichtfeld
   notifyEmail:    '',      // Zieladresse der Reservierungsmail (leer = SITE_CONFIG.email)
   showMailCopy:   true,    // Nach dem Absenden Link „Kopie per E-Mail senden"
+  openInNewTab:   true,    // Reservierung in eigenem Browser-Tab (#reservierung) statt im Modal
 };
 
 // Zusammengeführte Ticket-Einstellungen (Standard + Admin-Überschreibungen).
@@ -552,6 +553,12 @@ function reservableEvents() {
   return allEvents()
     .filter(ev => ticketState(ev).open)
     .sort((a, b) => eventDate(a) - eventDate(b));
+}
+
+// Termin über seine id finden (z. B. für die Reservierungsseite #reservierung/<id>)
+function findEvent(id) {
+  if (!id) return null;
+  return allEvents().find(ev => String(ev.id) === String(id)) || null;
 }
 
 const RESERVATIONS_KEY = 'nazumido_reservations';
@@ -639,7 +646,7 @@ Object.assign(window, {
   GALLERY_DEFAULTS, galleryConfig, eventDate, upcomingEvents, showTopbarStrip,
   siteConfig, allEvents, startOfToday, topbarStripLeadDays,
   MONTH_NAMES, dateLabel, eventDateLabel,
-  TICKET_DEFAULTS, ticketConfig, ticketState, reservableEvents,
+  TICKET_DEFAULTS, ticketConfig, ticketState, reservableEvents, findEvent,
   RESERVATIONS_KEY, loadReservations, saveReservations, addReservation,
   DEMO_USERS, INTERNAL, SITE_CONFIG,
 });

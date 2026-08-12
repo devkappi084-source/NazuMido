@@ -44,9 +44,9 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 
 | File | Exports to `window` |
 |---|---|
-| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `loadReservations`, `saveReservations`, `addReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
-| `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `NewsletterBlock`, `Footer`, `Modal`, `TicketForm` |
-| `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage` |
+| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `findEvent`, `loadReservations`, `saveReservations`, `addReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
+| `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `ContactBlock`, `Footer`, `Modal`, `TicketForm`, `openTicketTab` |
+| `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage`, `ReservationPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
 | `app.jsx` | Renders root; no exports (calls `ReactDOM.createRoot`) |
 
@@ -58,7 +58,7 @@ Hash-based routing via `window.location.hash`. The `route` state in `app.jsx` dr
 
 | Hash | Renders |
 |---|---|
-| `#home` (default) | `Hero` + `Welcome` + `NewsFeed` + `SponsorsMarquee` + `EventsBand` + `GroupsBlock` + `PeopleBlock` + `NewsletterBlock` |
+| `#home` (default) | `Hero` + `Welcome` + `NewsFeed` + `SponsorsMarquee` + `EventsBand` + `GroupsBlock` + `PeopleBlock` + `ContactBlock` |
 | `#garde` | `GardePage` |
 | `#musikzug` | `MusikzugPage` |
 | `#vorsitz` | `VorsitzPage` |
@@ -66,8 +66,11 @@ Hash-based routing via `window.location.hash`. The `route` state in `app.jsx` dr
 | `#sponsoren` | `SponsorsPage` |
 | `#login` | `LoginPage` |
 | `#mitglieder` | `MemberDashboard` (or `LoginPage` if not authenticated) |
+| `#reservierung/<event-id>` | `ReservationPage` — Reservierungsformular im eigenen Tab (ohne id: Terminauswahl) |
 
 **Scroll-to-anchor IDs** (`events`, `news`, `groups`, `people`, `kontakt`) are handled as special cases in `handleNav`: they stay on `#home` and smooth-scroll to the matching element ID rather than changing the route.
+
+**Route parameters**: `app.jsx` splits the hash on `/` into `routeName` + `routeParam`, so `#reservierung/e2` renders the reservation page for event `e2`. All render branches match on `routeName`.
 
 ## Auth system
 
@@ -109,7 +112,7 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `photoYear(photo)` — helper that returns a photo's year, falling back to parsing `date` for older localStorage data written before `year` existed
 - `photoGroups()` — current gallery groups, read from `window.PHOTO_GROUPS` so admin overrides apply
 - `GALLERY_DEFAULTS` / `galleryConfig()` — gallery settings (texts, filters, sort order, `photosPerGroup`, `hdMembersOnly`, `showInNav`, HD section). `galleryConfig()` merges the defaults with `window.SITE_CONFIG.gallery` and is the only way gallery code should read these values — never read `SITE_CONFIG.gallery` directly, or admin overrides get missed
-- `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
+- `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`, `openInNewTab`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
 - `ticketState(event)` — `{ open, reason, at, opensAt, cfg }` for one date. `reason` is `open`, `off` (master switch off), `event-off` (`tickets` not set on the event), `past`, or `soon` (still outside the `openWeeks` window — `opensAt` says when it opens). `reservableEvents()` returns the currently bookable dates, ascending
 - `loadReservations()` / `saveReservations(list)` / `addReservation(entry)` — reservation store in `localStorage` under `nazumido_reservations`; `addReservation` stamps `id`, `code` (e.g. `NZ-4F2QK`) and `at`
 - `DEMO_USERS` — hardcoded login credentials (see Auth section above)
@@ -119,20 +122,32 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 ## Ticket reservation
 
 Visitors reserve seats from the events band (`EventsBand`) or from the event
-detail modal: both hand the event to `Modal` with `_tickets: true`, which opens
-`TicketForm` (`components.jsx`) instead of the detail view. A date is bookable
-only when `ticketState(event).open` — i.e. the master switch is on, the event
-has `tickets: true`, the date is not past, and the `openWeeks` lead time has
-been reached. Non-bookable dates show a `.ticket-hint` box instead of the
-button ("Reservierung ab …" or the configurable `closedText`).
+detail modal. Both call `openTicketTab(event)` (`components.jsx`) first: with
+`tickets.openInNewTab` on (the default) that opens `#reservierung/<event-id>`
+in a new browser tab, rendered by `ReservationPage` (`pages-detail.jsx`). If
+the setting is off — or a popup blocker kills the tab — the flow falls back to
+the old modal, which gets the event with `_tickets: true` and shows
+`TicketForm` instead of the detail view. Both paths render the same
+`TicketForm`; the standalone page passes `standalone` (adds a print button and
+the reservation-code note) and a `backLabel`.
 
-Submitting writes the reservation to `localStorage` and offers a prefilled
+A date is bookable only when `ticketState(event).open` — i.e. the master switch
+is on, the event has `tickets: true`, the date is not past, and the `openWeeks`
+lead time has been reached. Non-bookable dates show a `.ticket-hint` box
+instead of the button ("Reservierung ab …" or the configurable `closedText`);
+`#reservierung/<id>` for such a date shows the same hint plus a list of the
+dates that *are* open.
+
+Submitting writes the reservation to `localStorage` (`nazumido_reservations`,
+same store for both paths since it is the same origin) and offers a prefilled
 `mailto:` link to `tickets.notifyEmail` (falling back to `SITE_CONFIG.email`).
 **There is no backend for this**: the stored copy lives only in the visitor's
 browser, so the e-mail is the channel that actually reaches the club. The
-admin's *Reservierungen* list (Events tab, with CSV export) therefore only
-shows what was booked on that same device. Moving this to the Worker API (D1)
-is the same open step as for the rest of the content.
+admin's *Reservierungen* list (Events tab) therefore only shows what was booked
+on that same device. It filters by date, exports CSV and opens a print view
+(own tab, `window.print()`) with a per-date attendee list — name, contact,
+seats, code, note and a tick box, plus the seat total. Moving this to the
+Worker API (D1) is the same open step as for the rest of the content.
 
 ## Admin panel
 
@@ -167,8 +182,9 @@ so it stays in sync with the site design.
 ### Ticket-Einstellungen
 
 `AdmTicketSettings` (*Einstellungen › Tickets*) holds everything global about
-the online reservation: the `PowerBtn` master switch, the list-button and phone
-toggles, `openWeeks` / `maxPerBooking` / `notifyEmail`, and the form texts.
+the online reservation: the `PowerBtn` master switch, the list-button, own-tab
+and phone toggles, `openWeeks` / `maxPerBooking` / `notifyEmail`, and the form
+texts.
 Saving writes `SITE_CONFIG.tickets`. Which dates are bookable is per event in
 the **Events** tab (`tickets`, `price`, `seats`, `ticketNote`), where the editor
 also shows the live `ticketStatusText` for the date and `AdmReservations` lists
