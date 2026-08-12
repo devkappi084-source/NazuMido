@@ -14,6 +14,9 @@
 
 const { useState: useStateApp, useEffect: useEffectApp } = React;
 
+// Abschnitte der Startseite, die per Hash angesprungen werden
+const ANCHOR_IDS = ['events', 'news', 'groups', 'people', 'kontakt'];
+
 function App() {
   const auth = useAuth();
   const [route, setRouteRaw] = useStateApp(() => {
@@ -43,9 +46,25 @@ function App() {
   // Expose current user on window for shared photo card component
   useEffectApp(() => { window.__currentUser = auth.user; }, [auth.user]);
 
+  // Routen können einen Parameter tragen: „reservierung/e2" → routeName + routeParam
+  const rawName    = route.split('/')[0];
+  const routeParam = route.split('/')[1] || '';
+  // Anker der Startseite (auch als Direktlink #kontakt) zeigen die Startseite
+  const routeName  = ANCHOR_IDS.includes(rawName) ? 'home' : rawName;
+
+  // Direktlink auf einen Anker: nach dem Rendern dorthin scrollen
+  useEffectApp(() => {
+    if (!ANCHOR_IDS.includes(rawName)) return;
+    const t = setTimeout(() => {
+      const el = document.getElementById(rawName);
+      if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80 });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [rawName]);
+
   const handleNav = (id) => {
     // 'home' route should also handle some legacy anchor ids
-    if (['events', 'news', 'groups', 'people', 'kontakt'].includes(id)) {
+    if (ANCHOR_IDS.includes(id)) {
       navigate('home');
       setTimeout(() => {
         const el = document.getElementById(id);
@@ -59,7 +78,7 @@ function App() {
     navigate(id);
   };
 
-  if (route === 'admin') {
+  if (routeName === 'admin') {
     if (typeof AdminPage === 'undefined' || typeof AdminErrorBoundary === 'undefined') {
       return <div style={{padding:40,fontFamily:'var(--sans,sans-serif)'}}>Admin-Panel lädt nicht — bitte Seite neu laden (<strong>Strg+Shift+R</strong>).</div>;
     }
@@ -73,13 +92,13 @@ function App() {
   return (
     <>
       <TopBar
-        route={route}
+        route={routeName}
         navigate={handleNav}
         user={auth.user}
         onLogout={auth.logout}
       />
 
-      {route === 'home' && (
+      {routeName === 'home' && (
         <main>
           <Hero navigate={handleNav} />
           <Welcome />
@@ -88,32 +107,36 @@ function App() {
           <EventsBand onOpen={setModal} />
           <GroupsBlock navigate={handleNav} />
           <PeopleBlock />
-          <NewsletterBlock />
+          <ContactBlock />
         </main>
       )}
 
-      {route === 'garde' && (
+      {routeName === 'reservierung' && (
+        <main><ReservationPage eventId={routeParam} navigate={handleNav} /></main>
+      )}
+
+      {routeName === 'garde' && (
         <main><GardePage navigate={handleNav} onOpenPhoto={setModal} /></main>
       )}
-      {route === 'musikzug' && (
+      {routeName === 'musikzug' && (
         <main><MusikzugPage navigate={handleNav} onOpenPhoto={setModal} /></main>
       )}
-      {route === 'vorsitz' && (
+      {routeName === 'vorsitz' && (
         <main><VorsitzPage navigate={handleNav} onOpenPhoto={setModal} /></main>
       )}
-      {(route === 'galerie' || route === 'photos') && (
+      {(routeName === 'galerie' || routeName === 'photos') && (
         <main><GaleriePage navigate={handleNav} onOpenPhoto={setModal} /></main>
       )}
-      {route === 'sponsoren' && (
+      {routeName === 'sponsoren' && (
         <main><SponsorsPage navigate={handleNav} /></main>
       )}
-      {route === 'login' && (
+      {routeName === 'login' && (
         <main><LoginPage auth={auth} navigate={handleNav} /></main>
       )}
-      {route === 'mitglieder' && auth.user && (
+      {routeName === 'mitglieder' && auth.user && (
         <main><MemberDashboard user={auth.user} auth={auth} navigate={handleNav} onOpenPhoto={setModal} /></main>
       )}
-      {route === 'mitglieder' && !auth.user && (
+      {routeName === 'mitglieder' && !auth.user && (
         <main><LoginPage auth={auth} navigate={handleNav} /></main>
       )}
 

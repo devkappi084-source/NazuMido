@@ -251,7 +251,7 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                   ? 'Vollzugriff — Vorstandsdokumente, Finanzen und Mitgliederverwaltung.'
                   : role === 'Trainerin'
                   ? 'Trainer:innen-Zugriff — Choreografien, Anwesenheitslisten, Backstage-Material.'
-                  : 'Mitgliederzugriff — Newsletter, Saisonkalender und HD-Foto-Download.'}
+                  : 'Mitgliederzugriff — Vereinsinfos, Saisonkalender und HD-Foto-Download.'}
               </p>
               <ul className="dash-doclist">
                 {(isElevated ? roleSpecific : baseInternal).map((doc, i) => (
