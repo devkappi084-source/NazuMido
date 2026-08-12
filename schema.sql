@@ -26,6 +26,30 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 
+-- Online-Reservierungen (POST /api/reservations). Der Worker legt die Tabelle
+-- bei Bedarf auch zur Laufzeit an, damit ein bestehendes D1 ohne Migration
+-- weiterläuft.
+CREATE TABLE IF NOT EXISTS reservations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT NOT NULL,
+  event_id    TEXT,
+  event_title TEXT NOT NULL,
+  event_date  TEXT,
+  event_iso   TEXT,
+  event_time  TEXT,
+  event_where TEXT,
+  name        TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  phone       TEXT,
+  seats       INTEGER NOT NULL DEFAULT 1,
+  note        TEXT,
+  ip_hash     TEXT,
+  mail_status TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_reservations_event ON reservations (event_iso, event_id);
+
 CREATE TABLE IF NOT EXISTS admins (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT UNIQUE NOT NULL,

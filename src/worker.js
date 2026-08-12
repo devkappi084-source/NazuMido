@@ -10,10 +10,11 @@
 // Die REST-API unter /api ist zeichengleich zur bisherigen Express-Version.
 //
 // HINWEIS: Die Website selbst liest ihre Inhalte aus public/data.jsx (plus den
-// Admin-Überschreibungen im localStorage) und ruft die /api-Routen derzeit
-// nicht auf. Verwaltet wird ausschließlich über das Panel unter #admin; das
-// frühere zweite Dashboard unter /admin wurde entfernt. Die API bleibt für
-// eine spätere serverseitige Speicherung erhalten.
+// Admin-Überschreibungen im localStorage). Die einzige Route, die sie aufruft,
+// ist POST /api/reservations — dort werden Ticket-Reservierungen gespeichert und
+// die Bestätigungsmail verschickt. Verwaltet wird ansonsten über das Panel unter
+// #admin; das frühere zweite Dashboard unter /admin wurde entfernt. Der Rest der
+// API bleibt für eine spätere serverseitige Speicherung erhalten.
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -177,6 +178,200 @@ async function ensureAdmin(env) {
   }
 }
 
+// Tabelle der Ticket-Reservierungen — liegt auch in schema.sql, wird hier aber
+// bei Bedarf angelegt, damit ein bestehendes D1 ohne Migration weiterläuft.
+async function ensureReservationsTable(env) {
+  await env.DB.exec(
+    'CREATE TABLE IF NOT EXISTS reservations (' +
+      'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+      'code TEXT NOT NULL, ' +
+      'event_id TEXT, event_title TEXT NOT NULL, event_date TEXT, event_iso TEXT, ' +
+      'event_time TEXT, event_where TEXT, ' +
+      'name TEXT NOT NULL, email TEXT NOT NULL, phone TEXT, ' +
+      'seats INTEGER NOT NULL DEFAULT 1, note TEXT, ' +
+      'ip_hash TEXT, mail_status TEXT, ' +
+      "created_at TEXT NOT NULL DEFAULT (datetime('now')))"
+  );
+}
+
+function makeReservationCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  let out = '';
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return 'NZ-' + out;
+}
+
+// Gekürzter Hash der Absender-IP — reicht für die Missbrauchsbremse, ist aber
+// keine gespeicherte IP-Adresse.
+async function hashIp(ip) {
+  if (!ip) return '';
+  const bits = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('nazumido:' + ip));
+  return bytesToB64(new Uint8Array(bits)).slice(0, 16);
+}
+
+// ===========================================================================
+// Hilfsfunktionen: E-Mail-Versand
+// ---------------------------------------------------------------------------
+// Cloudflare Workers haben keinen eigenen Mailversand; verschickt wird über die
+// HTTP-API eines Anbieters. Unterstützt werden Resend, Brevo und Mailgun — die
+// Wahl ergibt sich aus MAIL_PROVIDER bzw. daraus, welcher Schlüssel gesetzt ist:
+//
+//   npx wrangler secret put RESEND_API_KEY      (bzw. BREVO_API_KEY / MAILGUN_API_KEY)
+//   [vars] MAIL_FROM = "Faschingsverein Nazumido <tickets@nazu-mido.at>"
+//   [vars] CLUB_EMAIL = "Nazu.Mido@gmx.at"      Kopie an den Verein
+//
+// Fehlt der Schlüssel oder MAIL_FROM, wird nichts verschickt (configured:false)
+// und die Website fällt auf den mailto-Link zurück.
+// ===========================================================================
+function mailConfig(env) {
+  const explicit = String(env.MAIL_PROVIDER || '').toLowerCase();
+  const provider =
+    explicit ||
+    (env.RESEND_API_KEY ? 'resend' : env.BREVO_API_KEY ? 'brevo' : env.MAILGUN_API_KEY ? 'mailgun' : '');
+  const from = String(env.MAIL_FROM || '').trim();
+  const match = from.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  return {
+    provider,
+    from,
+    fromName: match ? match[1].replace(/^"|"$/g, '') : String(env.MAIL_FROM_NAME || 'Faschingsverein Nazumido'),
+    fromEmail: match ? match[2] : from,
+    club: String(env.CLUB_EMAIL || '').trim(),
+    configured: !!provider && !!from,
+  };
+}
+
+async function sendMail(env, msg) {
+  const cfg = mailConfig(env);
+  if (!cfg.configured) return { ok: false, reason: 'not-configured' };
+
+  let request;
+  if (cfg.provider === 'resend') {
+    request = ['https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: cfg.from, to: [msg.to], subject: msg.subject,
+        text: msg.text, html: msg.html, reply_to: msg.replyTo || undefined,
+      }),
+    }];
+  } else if (cfg.provider === 'brevo') {
+    request = ['https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        sender: { email: cfg.fromEmail, name: cfg.fromName },
+        to: [{ email: msg.to }], subject: msg.subject,
+        textContent: msg.text, htmlContent: msg.html,
+        replyTo: msg.replyTo ? { email: msg.replyTo } : undefined,
+      }),
+    }];
+  } else if (cfg.provider === 'mailgun') {
+    const host = String(env.MAILGUN_REGION || '').toLowerCase() === 'eu' ? 'api.eu.mailgun.net' : 'api.mailgun.net';
+    const form = new URLSearchParams({ from: cfg.from, to: msg.to, subject: msg.subject, text: msg.text });
+    if (msg.html) form.set('html', msg.html);
+    if (msg.replyTo) form.set('h:Reply-To', msg.replyTo);
+    request = [`https://${host}/v3/${env.MAILGUN_DOMAIN}/messages`, {
+      method: 'POST',
+      headers: { Authorization: 'Basic ' + btoa(`api:${env.MAILGUN_API_KEY}`) },
+      body: form,
+    }];
+  } else {
+    return { ok: false, reason: `unbekannter Anbieter: ${cfg.provider}` };
+  }
+
+  try {
+    const resp = await fetch(request[0], request[1]);
+    if (!resp.ok) {
+      const detail = (await resp.text().catch(() => '')).slice(0, 300);
+      console.error('[mail] Anbieter antwortete', resp.status, detail);
+      return { ok: false, reason: `HTTP ${resp.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('[mail] Versand fehlgeschlagen:', err && err.message);
+    return { ok: false, reason: (err && err.message) || 'Netzwerkfehler' };
+  }
+}
+
+function reservationMailTexts(res) {
+  const when = `${res.eventDate}${res.eventTime ? ', ' + res.eventTime : ''}`;
+  const rows = [
+    ['Veranstaltung', res.eventTitle],
+    ['Termin', when],
+    res.eventWhere ? ['Ort', res.eventWhere] : null,
+    ['Plätze', String(res.count)],
+    ['Auf den Namen', res.name],
+    res.phone ? ['Telefon', res.phone] : null,
+    res.note ? ['Anmerkung', res.note] : null,
+    ['Kennung', res.code],
+  ].filter(Boolean);
+
+  const escapeHtml = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const table = rows
+    .map(([k, v]) =>
+      `<tr><td style="padding:6px 0;color:#7C7363;font-size:12px;text-transform:uppercase;letter-spacing:.08em">${escapeHtml(k)}</td>` +
+      `<td style="padding:6px 0;text-align:right;font-weight:600">${escapeHtml(v)}</td></tr>`)
+    .join('');
+
+  return {
+    rows,
+    text: rows.map(([k, v]) => `${k}: ${v}`).join('\n'),
+    html:
+      `<div style="font-family:Helvetica,Arial,sans-serif;color:#16140F;max-width:520px">` +
+      `<p style="border-bottom:3px solid #C8202C;padding-bottom:8px;margin:0 0 18px;` +
+      `font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7C7363">Faschingsverein Nazumido</p>` +
+      `<h2 style="margin:0 0 6px;font-size:22px">Reservierung ${escapeHtml(res.code)}</h2>` +
+      `<p style="margin:0 0 18px;color:#3A352B">${escapeHtml(res.eventTitle)} — ${escapeHtml(when)}</p>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:14px">${table}</table>`,
+  };
+}
+
+// Bestätigung an die Besucher:in + Benachrichtigung an den Verein
+async function sendReservationMails(env, res) {
+  const cfg = mailConfig(env);
+  if (!cfg.configured) return { configured: false, status: 'not-configured' };
+
+  const t = reservationMailTexts(res);
+  const visitor = await sendMail(env, {
+    to: res.email,
+    replyTo: cfg.club || undefined,
+    subject: `Reservierung ${res.code} — ${res.eventTitle}`,
+    text:
+      `Hallo ${res.name},\n\nvielen Dank für deine Reservierung! Wir haben sie notiert:\n\n` +
+      `${t.text}\n\n` +
+      `Bitte hol deine Karten spätestens 15 Minuten vor Beginn an der Abendkasse ab — ` +
+      `Kennung und Name genügen. Die Reservierung ist unverbindlich; wenn du doch nicht ` +
+      `kommen kannst, sag uns bitte kurz Bescheid.\n\n` +
+      `Närrische Grüße\nFaschingsverein Nazumido`,
+    html:
+      t.html +
+      `<p style="margin:18px 0 0;font-size:14px;color:#3A352B">Bitte hol deine Karten spätestens ` +
+      `15 Minuten vor Beginn an der Abendkasse ab — Kennung und Name genügen.</p>` +
+      `<p style="margin:18px 0 0;font-size:14px;color:#3A352B">Närrische Grüße<br>Faschingsverein Nazumido</p></div>`,
+  });
+
+  let club = { ok: false, reason: 'no-club-address' };
+  if (cfg.club) {
+    club = await sendMail(env, {
+      to: cfg.club,
+      replyTo: res.email,
+      subject: `Neue Reservierung ${res.code} — ${res.eventTitle} (${res.count} Plätze)`,
+      text: `Neue Online-Reservierung:\n\n${t.text}\nE-Mail: ${res.email}\n`,
+      html: t.html + `<p style="margin:18px 0 0;font-size:14px">E-Mail: ${res.email}</p></div>`,
+    });
+  }
+
+  return {
+    configured: true,
+    visitor: visitor.ok ? 'sent' : visitor.reason,
+    club: club.ok ? 'sent' : club.reason,
+    status: visitor.ok ? 'sent' : 'error',
+  };
+}
+
 // ===========================================================================
 // CORS — bei gleicher Domain (Standard) unkritisch; erlaubt zusätzlich
 // localhost für die lokale Entwicklung mit `wrangler dev`.
@@ -239,6 +434,81 @@ app.get('/api/settings', async (c) => {
   const settings = {};
   for (const { key, value } of results || []) settings[key] = value;
   return c.json(settings);
+});
+
+// ===========================================================================
+// ÖFFENTLICH: Ticket-Reservierungen
+// ---------------------------------------------------------------------------
+// POST /api/reservations speichert die Reservierung in D1 und verschickt zwei
+// Mails: die Bestätigung an die Besucher:in und eine Benachrichtigung an den
+// Verein. Ist kein Mailanbieter hinterlegt (siehe mailConfig), wird nur
+// gespeichert und `mail.configured: false` gemeldet — die Website bietet dann
+// wie bisher den mailto-Link an.
+// ===========================================================================
+app.post('/api/reservations', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const clean = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, max);
+
+  const res = {
+    code:       clean(body.code, 24) || makeReservationCode(),
+    eventId:    clean(body.eventId, 64),
+    eventTitle: clean(body.eventTitle, 160),
+    eventDate:  clean(body.eventDate, 80),
+    eventIso:   clean(body.eventIso, 10),
+    eventTime:  clean(body.eventTime, 40),
+    eventWhere: clean(body.eventWhere, 120),
+    name:       clean(body.name, 120),
+    email:      clean(body.email, 160),
+    phone:      clean(body.phone, 60),
+    note:       clean(body.note, 400),
+    count:      parseInt(body.count, 10),
+  };
+
+  if (!res.name)  return c.json({ error: 'Name fehlt' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(res.email)) return c.json({ error: 'E-Mail-Adresse ungültig' }, 400);
+  if (!res.eventTitle) return c.json({ error: 'Veranstaltung fehlt' }, 400);
+  if (!(res.count > 0) || res.count > 50) return c.json({ error: 'Platzanzahl ungültig' }, 400);
+
+  await ensureReservationsTable(c.env);
+
+  // Einfache Missbrauchsbremse: pro Absender-IP höchstens 10 Reservierungen je
+  // Stunde. Gespeichert wird nur ein gekürzter Hash, nicht die IP selbst.
+  const ipHash = await hashIp(c.req.header('CF-Connecting-IP') || '');
+  if (ipHash) {
+    const recent = await db(c)
+      .prepare("SELECT COUNT(*) AS n FROM reservations WHERE ip_hash = ? AND created_at > datetime('now', '-1 hour')")
+      .bind(ipHash)
+      .first();
+    if (recent && Number(recent.n) >= 10) {
+      return c.json({ error: 'Zu viele Reservierungen in kurzer Zeit — bitte später erneut versuchen.' }, 429);
+    }
+  }
+
+  const mail = await sendReservationMails(c.env, res);
+
+  await db(c)
+    .prepare(
+      `INSERT INTO reservations
+         (code, event_id, event_title, event_date, event_iso, event_time, event_where,
+          name, email, phone, seats, note, ip_hash, mail_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      res.code, res.eventId, res.eventTitle, res.eventDate, res.eventIso, res.eventTime,
+      res.eventWhere, res.name, res.email, res.phone, res.count, res.note, ipHash, mail.status
+    )
+    .run();
+
+  return c.json({ ok: true, code: res.code, mail });
+});
+
+// Reservierungen für das Admin-Panel (JWT nötig, siehe /api/login)
+app.get('/api/admin/reservations', requireAuth, async (c) => {
+  await ensureReservationsTable(c.env);
+  const { results } = await db(c)
+    .prepare('SELECT * FROM reservations ORDER BY event_iso ASC, created_at DESC')
+    .all();
+  return c.json(results || []);
 });
 
 // ===========================================================================

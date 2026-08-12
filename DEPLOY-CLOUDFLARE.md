@@ -101,6 +101,49 @@ Der Benutzername steht als nicht-geheime Variable `ADMIN_USERNAME` in der
 
 ---
 
+## Schritt 3b — Bestätigungsmails für Ticket-Reservierungen (optional)
+
+Reservierungen von der Website landen über `POST /api/reservations` in D1. Ist
+ein Mailanbieter hinterlegt, verschickt der Worker sofort zwei Mails: die
+Bestätigung an die Besucher:in und eine Kopie an den Verein. Fehlt der Anbieter,
+wird nur gespeichert und die Website bietet wie bisher den mailto-Link an —
+nichts geht verloren.
+
+Cloudflare Workers können selbst keine Mails verschicken; nötig ist ein Konto
+bei einem Anbieter mit HTTP-API. Unterstützt werden **Resend**, **Brevo** und
+**Mailgun** (kostenlose Kontingente reichen für einen Verein locker aus):
+
+```bash
+# 1. Anbieter-Schlüssel als Secret (nur einer davon nötig)
+npx wrangler secret put RESEND_API_KEY      # Resend
+#   oder: npx wrangler secret put BREVO_API_KEY
+#   oder: npx wrangler secret put MAILGUN_API_KEY   (+ MAILGUN_DOMAIN, MAILGUN_REGION="eu")
+
+# 2. Absender und Empfänger in wrangler.toml unter [vars] eintragen:
+#    MAIL_FROM  = "Faschingsverein Nazumido <tickets@nazu-mido.at>"
+#    CLUB_EMAIL = "Nazu.Mido@gmx.at"
+```
+
+Die Absenderdomain muss beim Anbieter verifiziert sein (SPF/DKIM-Einträge im
+DNS), sonst weist er den Versand ab. `MAIL_PROVIDER` ist optional und nur nötig,
+wenn mehrere Schlüssel gesetzt sind.
+
+Prüfen:
+
+```bash
+curl -s https://<deine-domain>/api/health          # zeigt, welche Variablen ankommen
+curl -s -X POST https://<deine-domain>/api/reservations \
+  -H 'Content-Type: application/json' \
+  -d '{"eventTitle":"Test","eventDate":"1. Jänner","name":"Test","email":"du@example.at","count":1}'
+# -> {"ok":true,"code":"NZ-…","mail":{"configured":true,"visitor":"sent","club":"sent",…}}
+```
+
+Ein-/ausschalten lässt sich der automatische Versand im Admin-Panel unter
+*Einstellungen › Tickets › Bestätigung*. Die gespeicherten Reservierungen holt
+`GET /api/admin/reservations` (JWT vom `/api/login`).
+
+---
+
 ## Schritt 4 — Deployen
 
 ```bash

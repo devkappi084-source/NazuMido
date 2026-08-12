@@ -518,6 +518,8 @@ const TICKET_DEFAULTS = {
   notifyEmail:    '',      // Zieladresse der Reservierungsmail (leer = SITE_CONFIG.email)
   showMailCopy:   true,    // Nach dem Absenden Link „Kopie per E-Mail senden"
   openInNewTab:   true,    // Reservierung in eigenem Browser-Tab (#reservierung) statt im Modal
+  autoMail:       true,    // Bestätigungsmail über den Worker (/api/reservations) verschicken
+  offerPdf:       true,    // Bestätigung als PDF zum Herunterladen anbieten
 };
 
 // Zusammengeführte Ticket-Einstellungen (Standard + Admin-Überschreibungen).
@@ -588,6 +590,26 @@ function addReservation(entry) {
   return res;
 }
 
+// Reservierung an den Worker schicken: dort wird sie in D1 gespeichert und die
+// Bestätigungsmail verschickt (siehe src/worker.js). Ohne Worker — etwa beim
+// Öffnen der Dateien direkt im Browser — schlägt der Aufruf fehl; die Website
+// bleibt dann beim mailto-Link. Wirft nie, sondern meldet das Ergebnis zurück.
+async function submitReservation(res) {
+  if (ticketConfig().autoMail === false) return { ok: false, reason: 'off' };
+  try {
+    const resp = await fetch('/api/reservations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(res),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, reason: data.error || `HTTP ${resp.status}` };
+    return Object.assign({ ok: true }, data);
+  } catch (e) {
+    return { ok: false, reason: (e && e.message) || 'Netzwerkfehler' };
+  }
+}
+
 const SITE_CONFIG = {
   season:        '11.11.2025 — 17.02.2026',
   memberCount:   '184',
@@ -647,6 +669,6 @@ Object.assign(window, {
   siteConfig, allEvents, startOfToday, topbarStripLeadDays,
   MONTH_NAMES, dateLabel, eventDateLabel,
   TICKET_DEFAULTS, ticketConfig, ticketState, reservableEvents, findEvent,
-  RESERVATIONS_KEY, loadReservations, saveReservations, addReservation,
+  RESERVATIONS_KEY, loadReservations, saveReservations, addReservation, submitReservation,
   DEMO_USERS, INTERNAL, SITE_CONFIG,
 });

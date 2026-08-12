@@ -1,5 +1,5 @@
 // End-to-End-Test des Cloudflare Workers via Miniflare (echtes D1 + R2, in-process).
-import { Miniflare } from 'miniflare';
+import { Miniflare, createFetchMock } from 'miniflare';
 import { readFileSync } from 'node:fs';
 
 // Serialisiert eine FormData spec-korrekt (undici) zu Body + Content-Type,
@@ -171,6 +171,98 @@ try {
   r = await mf.dispatchFetch(`${BASE}/api/gibtsnicht`);
   d = await j(r);
   check('GET /api/gibtsnicht -> 404 JSON', r.status === 404 && d.error === 'Endpunkt nicht gefunden');
+
+  // --- Reservierungen -----------------------------------------------------
+  const reservation = {
+    code: 'NZ-TEST1',
+    eventId: 'e2', eventTitle: 'Prinzenball', eventDate: '17. Jänner 2026',
+    eventIso: '2026-01-17', eventTime: '20:11 Uhr', eventWhere: 'Kulturhaus',
+    name: 'Jürgen Größwang', email: 'juergen@example.at', phone: '+43 664 123',
+    count: 4, note: 'Tisch nahe der Bühne',
+  };
+  r = await mf.dispatchFetch(`${BASE}/api/reservations`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reservation),
+  });
+  d = await j(r);
+  check('POST /api/reservations -> 200 + Kennung', r.status === 200 && d.ok === true && d.code === 'NZ-TEST1', `(status=${r.status})`);
+  check('  ohne Mailanbieter -> mail.configured=false', d.mail && d.mail.configured === false, `(mail=${JSON.stringify(d.mail)})`);
+
+  const stored = await db.prepare('SELECT * FROM reservations WHERE code = ?').bind('NZ-TEST1').first();
+  check('  in D1 gespeichert', !!stored && stored.seats === 4 && stored.name === 'Jürgen Größwang',
+    `(row=${JSON.stringify(stored)})`);
+
+  r = await mf.dispatchFetch(`${BASE}/api/reservations`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...reservation, code: 'NZ-TEST2', email: 'keine-mail' }),
+  });
+  check('POST /api/reservations ohne gültige E-Mail -> 400', r.status === 400);
+
+  r = await mf.dispatchFetch(`${BASE}/api/reservations`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...reservation, code: 'NZ-TEST3', count: 0 }),
+  });
+  check('POST /api/reservations mit 0 Plätzen -> 400', r.status === 400);
+
+  r = await mf.dispatchFetch(`${BASE}/api/reservations`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...reservation, code: '', name: 'Ohne Kennung' }),
+  });
+  d = await j(r);
+  check('POST /api/reservations ohne Kennung -> Server vergibt eine', r.status === 200 && /^NZ-[A-Z0-9]{5}$/.test(d.code || ''), `(code=${d.code})`);
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/reservations`);
+  check('GET /api/admin/reservations ohne Token -> 401', r.status === 401);
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/reservations`, { headers: auth });
+  d = await j(r);
+  check('GET /api/admin/reservations mit Token -> Liste', r.status === 200 && d.some((x) => x.code === 'NZ-TEST1'), `(len=${d.length})`);
+
+  // --- Bestätigungsmail (Anbieter-API wird abgefangen) --------------------
+  // Zweite Instanz mit Mailanbieter; der Aufruf an api.resend.com wird
+  // abgefangen, damit der Test ohne Netz und ohne echten Schlüssel läuft.
+  const sent = [];
+  const fetchMock = createFetchMock();
+  fetchMock.disableNetConnect();
+  fetchMock
+    .get('https://api.resend.com')
+    .intercept({ path: '/emails', method: 'POST' })
+    // opts.body ist ein ReadableStream — asynchron einlesen und die Promise merken
+    .reply(200, (opts) => { sent.push(new Response(opts.body).text().then((t) => JSON.parse(t))); return { id: 'mock' }; })
+    .times(2);
+
+  const mfMail = new Miniflare({
+    modules: true,
+    compatibilityDate: '2024-09-23',
+    scriptPath: './dist-worker/worker.js',
+    d1Databases: { DB: 'nazumido-mail-db' },
+    r2Buckets: { BUCKET: 'nazumido-uploads' },
+    fetchMock,
+    bindings: {
+      JWT_SECRET: 'test-secret-nur-fuer-den-test-1234567890',
+      RESEND_API_KEY: 'test-key',
+      MAIL_FROM: 'Faschingsverein Nazumido <tickets@nazu-mido.at>',
+      CLUB_EMAIL: 'verein@nazu-mido.at',
+    },
+    serviceBindings: { ASSETS: () => new Response('asset-fallback', { status: 200 }) },
+  });
+  try {
+    r = await mfMail.dispatchFetch(`${BASE}/api/reservations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...reservation, code: 'NZ-MAIL1' }),
+    });
+    d = await j(r);
+    const mails = await Promise.all(sent);
+    check('POST /api/reservations mit Anbieter -> Mail verschickt',
+      r.status === 200 && d.mail && d.mail.visitor === 'sent' && d.mail.club === 'sent',
+      `(mail=${JSON.stringify(d.mail)})`);
+    check('  Bestätigung geht an die Besucher:in', mails[0] && mails[0].to[0] === 'juergen@example.at', `(to=${mails[0] && mails[0].to})`);
+    check('  Kennung und Termin stehen im Text',
+      mails[0] && mails[0].subject.includes('NZ-MAIL1') && mails[0].text.includes('Prinzenball'));
+    check('  Kopie geht an den Verein', mails[1] && mails[1].to[0] === 'verein@nazu-mido.at', `(to=${mails[1] && mails[1].to})`);
+  } finally {
+    await mfMail.dispose();
+  }
 
 } catch (e) {
   console.error('\nTEST-CRASH:', e);
