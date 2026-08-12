@@ -21,7 +21,9 @@ function useAuth() {
   }, [user]);
 
   const login = (email, password) => {
-    const u = DEMO_USERS.find(x => x.email === email && x.password === password);
+    // demoUsers() statt DEMO_USERS: im Admin angelegte Konten liegen auf window
+    const mail = String(email || '').trim().toLowerCase();
+    const u = demoUsers().find(x => String(x.email).toLowerCase() === mail && x.password === password);
     if (u) {
       setUser({ ...u, password: undefined });
       return { ok: true };
@@ -47,12 +49,18 @@ function useAuth() {
     }
     try {
       const registered = JSON.parse(localStorage.getItem('nazumido_registry') || '[]');
-      if (registered.find(x => x.email === data.email) || DEMO_USERS.find(x => x.email === data.email)) {
+      if (registered.find(x => x.email === data.email) || demoUsers().find(x => x.email === data.email)) {
         return { ok: false, error: 'Diese E-Mail ist bereits registriert.' };
       }
+      // Rollen mit `signup: false` (Trainer:in, Vorstand, Admin) kann man nicht
+      // selbst vergeben — das Konto startet als Mitglied, der Wunsch wird notiert
+      // und im Admin unter „Benutzer" freigeschaltet.
+      const wanted = roleInfo(data.role || 'Mitglied');
+      const granted = wanted.signup === false ? 'Mitglied' : wanted.id;
       const newUser = {
         ...data,
-        role: data.role || 'Mitglied',
+        role: granted,
+        requestedRole: wanted.signup === false ? wanted.id : undefined,
         avatar: data.name.charAt(0).toUpperCase(),
       };
       registered.push(newUser);
@@ -110,12 +118,15 @@ function LoginPage({ auth, navigate }) {
         </div>
         <div>
           <div className="demo-card">
-            <strong>Demo-Zugänge (zum Testen)</strong>
-            {DEMO_USERS.map((u, i) => (
+            <strong>Zugänge (zum Testen)</strong>
+            {demoUsers().map((u, i) => (
               <div key={i} className="demo-row">
                 <div>
-                  <div style={{ color: 'var(--paper)' }}>{u.role}</div>
+                  <div style={{ color: 'var(--paper)' }}>{roleInfo(u.role).label}</div>
                   <div style={{ opacity: 0.7, fontSize: 11 }}>{u.email}</div>
+                  <div style={{ opacity: 0.55, fontSize: 10, fontFamily: 'var(--mono)' }}>
+                    {userRights(u).length} Rechte
+                  </div>
                 </div>
                 <button onClick={() => fillDemo(u)}>Übernehmen</button>
               </div>
@@ -170,12 +181,18 @@ function LoginPage({ auth, navigate }) {
           <div className="field">
             <label>Ich bin…</label>
             <select value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
-              <option value="Mitglied">Mitglied (Fan / Unterstützer:in)</option>
-              <option value="Trainerin">Aktives Mitglied (Garde / Musikzug)</option>
-              <option value="Vorstand">Vorstandsmitglied</option>
+              {roles().map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.label}{r.signup === false ? ' (Freischaltung nötig)' : ''}
+                </option>
+              ))}
             </select>
             <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-              Hinweis: Bei Auswahl "Vorstand" wird dein Konto vom Schriftführer freigeschalten.
+              {roleInfo(form.role).desc}
+              {roleInfo(form.role).signup === false && (
+                <> <strong>Hinweis:</strong> Dein Konto startet als Mitglied — die höhere Rolle
+                schaltet der Schriftführer im Vereinssystem frei.</>
+              )}
             </p>
           </div>
         )}
@@ -197,13 +214,49 @@ function LoginPage({ auth, navigate }) {
 }
 
 // ---------- Member Dashboard ----------
-function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
-  const role = user.role;
-  const baseInternal = INTERNAL.Mitglied;
-  const roleSpecific = INTERNAL[role] || [];
-  const isElevated = role === 'Trainerin' || role === 'Vorstand';
+// Farbwerte der Rollen für Pille und Avatar
+const ROLE_TONES = {
+  red:   { bg: 'var(--red)',   fg: 'var(--paper)', pill: '' },
+  green: { bg: 'var(--green)', fg: 'var(--paper)', pill: 'green' },
+  gold:  { bg: 'var(--gold)',  fg: 'var(--ink)',   pill: 'gold' },
+  ink:   { bg: 'var(--ink)',   fg: 'var(--paper)', pill: 'ink' },
+};
 
-  const roleColorClass = role === 'Vorstand' ? '' : role === 'Trainerin' ? 'gold' : 'green';
+function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
+  const info = roleInfo(user.role);
+  const role = info.id;
+  const rights = userRights(user);
+  const can = id => rights.indexOf(id) !== -1;
+  const custom = Array.isArray(user.rights);
+
+  // Dokumente der Rolle, gefiltert nach den Rechten des Kontos
+  const internal = window.INTERNAL || INTERNAL;
+  const docs = (internal[role] || internal.Mitglied || [])
+    .filter(d => !d.right || can(d.right));
+
+  const tone = ROLE_TONES[info.color] || ROLE_TONES.green;
+  const photos = window.PHOTOS || PHOTOS;
+
+  // Ohne das Recht „intern" bleibt das Dashboard zu (z. B. gesperrte Konten)
+  if (!can('intern')) {
+    return (
+      <div className="dash">
+        <div className="container" style={{ maxWidth: 620 }}>
+          <div className="dash-section">
+            <h3>Kein Zugriff</h3>
+            <p className="desc">
+              Deine Rolle „{info.label}" ist derzeit nicht für den Mitgliederbereich
+              freigeschaltet. Melde dich beim Schriftführer, wenn das ein Irrtum ist.
+            </p>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button className="btn outline-dark" onClick={() => navigate('home')}>Zur Startseite</button>
+              <button className="btn outline-dark" onClick={() => { auth.logout(); navigate('home'); }}>Abmelden</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dash">
@@ -218,16 +271,19 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
           <div className="dash-greeting">
             <span className="eyebrow no-rule">Eingeloggt · session 2026</span>
             <h2>Helau, <span style={{ fontStyle: 'italic', color: 'var(--red)' }}>{user.name.split(' ')[0]}</span>.</h2>
-            <div className={"role-pill " + roleColorClass}>
+            <div className={"role-pill " + tone.pill}>
               <span className="dot"></span>
-              Rolle · {role}{user.group ? ` · ${user.group}` : ''}
+              Rolle · {info.label}{user.group ? ` · ${user.group}` : ''}
+              {custom && ' · individuell'}
             </div>
+            {user.requestedRole && (
+              <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 10 }}>
+                Freischaltung als <strong>{roleInfo(user.requestedRole).label}</strong> ist beantragt.
+              </p>
+            )}
           </div>
           <div className="dash-user">
-            <div className="dash-avatar" style={{
-              background: role === 'Vorstand' ? 'var(--ink)' : role === 'Trainerin' ? 'var(--gold)' : 'var(--green)',
-              color: role === 'Trainerin' ? 'var(--ink)' : 'var(--paper)',
-            }}>
+            <div className="dash-avatar" style={{ background: tone.bg, color: tone.fg }}>
               {user.avatar}
             </div>
             <div className="dash-user-info">
@@ -246,38 +302,39 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
           <div>
             <div className="dash-section">
               <h3>Interne Dokumente</h3>
-              <p className="desc">
-                {role === 'Vorstand'
-                  ? 'Vollzugriff — Vorstandsdokumente, Finanzen und Mitgliederverwaltung.'
-                  : role === 'Trainerin'
-                  ? 'Trainer:innen-Zugriff — Choreografien, Anwesenheitslisten, Backstage-Material.'
-                  : 'Mitgliederzugriff — Vereinsinfos, Saisonkalender und HD-Foto-Download.'}
-              </p>
-              <ul className="dash-doclist">
-                {(isElevated ? roleSpecific : baseInternal).map((doc, i) => (
-                  <li key={i}>
-                    <div className="ico">{doc.icon}</div>
-                    <div>
-                      <div className="ti">{doc.title}</div>
-                      <div className="mt">{doc.meta}</div>
-                    </div>
-                    <button className="btn-mini"
-                      onClick={() => doc.kind === 'photos' ? navigate('galerie') : alert('Demo: Dokument-Download startet…')}>
-                      {doc.kind === 'photos' ? 'Galerie' : 'Öffnen'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <p className="desc">{info.desc}</p>
+              {docs.length ? (
+                <ul className="dash-doclist">
+                  {docs.map((doc, i) => (
+                    <li key={i}>
+                      <div className="ico">{doc.icon}</div>
+                      <div>
+                        <div className="ti">{doc.title}</div>
+                        <div className="mt">{doc.meta}</div>
+                      </div>
+                      <button className="btn-mini"
+                        onClick={() => doc.kind === 'photos' ? navigate('galerie')
+                          : doc.kind === 'admin' ? navigate('admin')
+                          : alert('Demo: Dokument-Download startet…')}>
+                        {doc.kind === 'photos' ? 'Galerie' : doc.kind === 'admin' ? 'Öffnen →' : 'Öffnen'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="desc">Für deine Rolle sind derzeit keine Dokumente hinterlegt.</p>
+              )}
             </div>
 
             <div className="dash-section">
               <h3>Fotogalerie · HD-Download</h3>
               <p className="desc">
-                Alle Galerien stehen dir in voller Auflösung zur Verfügung.
-                Klick auf ein Bild zum Herunterladen.
+                {can('hdfotos')
+                  ? 'Alle Galerien stehen dir in voller Auflösung zur Verfügung. Klick auf ein Bild zum Herunterladen.'
+                  : 'Deine Rolle sieht die Web-Vorschau. Den HD-Download schaltet der Vorstand pro Konto frei.'}
               </p>
               <div className="photo-grid" style={{ marginTop: 6 }}>
-                {PHOTOS.slice(0, 8).map(p => (
+                {photos.slice(0, 8).map(p => (
                   <PhotoCard key={p.id} photo={p} onOpen={onOpenPhoto} />
                 ))}
               </div>
@@ -307,9 +364,35 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                 <button className="btn outline-dark" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('sponsoren')}>
                   <span>Sponsorenübersicht</span><span>→</span>
                 </button>
+                {can('admin') && (
+                  <button className="btn" style={{ justifyContent: 'space-between', width: '100%' }} onClick={() => navigate('admin')}>
+                    <span>Website-Verwaltung</span><span>→</span>
+                  </button>
+                )}
               </div>
             </div>
 
+            <div className="dash-section">
+              <h3>Deine Rechte</h3>
+              <p className="desc">
+                {custom
+                  ? 'Für dieses Konto wurden die Rechte individuell vergeben.'
+                  : `Ergibt sich aus deiner Rolle „${info.label}".`}
+              </p>
+              <ul className="rights-list">
+                {(window.RIGHTS || RIGHTS).map(r => (
+                  <li key={r.id} className={can(r.id) ? 'on' : 'off'}>
+                    <span className="mark" aria-hidden>{can(r.id) ? '✓' : '—'}</span>
+                    <span>
+                      <b>{r.label}</b>
+                      <em>{r.desc}</em>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {can('termine') && (
             <div className="dash-section">
               <h3>Nächste interne Termine</h3>
               <p className="desc">Nur für Mitglieder sichtbar.</p>
@@ -328,17 +411,27 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
                     <div className="mt">10. Feb · 19:30 · Gasthof Hofer</div>
                   </div>
                 </li>
-                {isElevated && (
+                {can('training') && (
                   <li>
                     <div className="ico">🔒</div>
                     <div>
-                      <div className="ti">{role === 'Vorstand' ? 'Vorstandssitzung' : 'Trainer:innen-Briefing'}</div>
-                      <div className="mt">{role === 'Vorstand' ? '06. Feb · 19:30 · Vereinsraum' : '08. Feb · 17:30 · Turnsaal'}</div>
+                      <div className="ti">Trainer:innen-Briefing</div>
+                      <div className="mt">08. Feb · 17:30 · Turnsaal</div>
+                    </div>
+                  </li>
+                )}
+                {can('finanzen') && (
+                  <li>
+                    <div className="ico">🔒</div>
+                    <div>
+                      <div className="ti">Vorstandssitzung</div>
+                      <div className="mt">06. Feb · 19:30 · Vereinsraum</div>
                     </div>
                   </li>
                 )}
               </ul>
             </div>
+            )}
 
             <div className="dash-section" style={{ background: 'var(--ink)', color: 'var(--paper)', borderColor: 'var(--ink)' }}>
               <h3 style={{ color: 'var(--paper)' }}>Mitgliederausweis</h3>
@@ -349,7 +442,7 @@ function MemberDashboard({ user, auth, navigate, onOpenPhoto }) {
               <div style={{ background: 'var(--paper)', color: 'var(--ink)', borderRadius: 8, padding: 20, fontFamily: 'var(--mono)', fontSize: 13 }}>
                 <div style={{ fontFamily: 'var(--serif)', fontSize: 22 }}>{user.name}</div>
                 <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: 4 }}>
-                  {role} {user.group ? `· ${user.group}` : ''}
+                  {info.label} {user.group ? `· ${user.group}` : ''}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18, alignItems: 'end' }}>
                   <div>

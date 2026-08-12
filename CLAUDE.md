@@ -44,8 +44,8 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 
 | File | Exports to `window` |
 |---|---|
-| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `findEvent`, `loadReservations`, `saveReservations`, `addReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
-| `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PeopleBlock`, `ContactBlock`, `Footer`, `Modal`, `TicketForm`, `openTicketTab` |
+| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `sponsorList`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `findEvent`, `loadReservations`, `saveReservations`, `addReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `RIGHTS`, `ROLES`, `roles`, `roleInfo`, `userRights`, `hasRight`, `currentUser`, `canDownloadHd`, `demoUsers`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
+| `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PersonCard`, `PeopleBlock`, `ContactBlock`, `Footer`, `Modal`, `TicketForm`, `openTicketTab` |
 | `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage`, `ReservationPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
 | `app.jsx` | Renders root; no exports (calls `ReactDOM.createRoot`) |
@@ -79,19 +79,56 @@ Hash-based routing via `window.location.hash`. The `route` state in `app.jsx` dr
 - `nazumido_user` — serialized current user object (password stripped)
 - `nazumido_registry` — array of self-registered users
 
-Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
+Login checks against `demoUsers()` first (that is `DEMO_USERS` incl. the accounts
+added in the admin), then the `nazumido_registry`. E-mail matching is
+case-insensitive.
 
-**Demo credentials (defined in `data.jsx`):**
+**Predefined logins (defined in `data.jsx`, editable under *Admin › Benutzer*):**
 
 | Email | Password | Role |
 |---|---|---|
 | `gast@nazumido.at` | `gast` | `Mitglied` |
+| `aktiv@nazumido.at` | `aktiv` | `Aktiv` |
 | `garde@nazumido.at` | `garde` | `Trainerin` |
 | `vorstand@nazumido.at` | `vorstand` | `Vorstand` |
+| `admin@nazumido.at` | `admin` | `Admin` |
 
-**Role values:** `Mitglied`, `Trainerin`, `Vorstand`. Role affects what the `MemberDashboard` shows — `INTERNAL` in `data.jsx` contains role-keyed content arrays.
+### Roles and rights
 
-**Photo download gate:** `window.__currentUser` is synced from auth state (in both `app.jsx` and `auth.jsx`) so `GroupPhotos` in `pages-detail.jsx` can check login status without prop drilling.
+`ROLES` in `data.jsx` defines the roles, each bundling ids from the `RIGHTS`
+catalog (`intern`, `termine`, `hdfotos`, `dokumente`, `training`, `finanzen`,
+`mitglieder`, `admin`). The rights escalate along the role ladder:
+
+| Role | Label | Rights on top of the previous row |
+|---|---|---|
+| `Mitglied` | Mitglied | `intern`, `termine`, `hdfotos` |
+| `Aktiv` | Aktives Mitglied | `dokumente` |
+| `Trainerin` | Trainer:in | `training` |
+| `Vorstand` | Vorstand | `finanzen`, `mitglieder` |
+| `Admin` | Administrator | `admin` |
+
+Never read `user.role` to decide what a user may do — ask
+`hasRight(user, 'right')`. `userRights(user)` returns the account's own
+`rights` array when it has one (set per account in the admin) and otherwise the
+rights of its role, so a personalised account keeps working when the role
+changes. `roleInfo(id)` resolves a role id to its definition and falls back to
+`Mitglied` for unknown ids, which keeps accounts from an older `localStorage`
+state usable.
+
+Roles carrying `signup: false` (Trainer:in, Vorstand, Admin) cannot be
+self-assigned: registering with one creates a `Mitglied` account that carries
+`requestedRole`, and *Admin › Benutzer › Registrierungen* grants it.
+
+Rights drive: the `MemberDashboard` (documents filtered by their `right` field,
+internal dates, the rights overview, the admin shortcut), the *Verwaltung* link
+in `TopBar`, and the HD photo gate. Without `intern` the dashboard shows a
+"Kein Zugriff" notice instead.
+
+**Photo download gate:** `window.__currentUser` is synced from auth state (in
+both `app.jsx` and `auth.jsx`); `currentUser()` reads it and `canDownloadHd(user)`
+combines it with the gallery setting — `hdMembersOnly` off releases HD for
+everyone, otherwise the `hdfotos` right decides. `PhotoCard`/`GroupPhotos` in
+`pages-detail.jsx` and `Modal` in `components.jsx` all go through that helper.
 
 ## Data model (all in `data.jsx`)
 
@@ -102,11 +139,12 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `dateLabel(date)` / `eventDateLabel(event)` — German long-form date (`14. Februar 2026`)
 - `showTopbarStrip()` — whether the marquee in the `TopBar` renders. False when `SITE_CONFIG.topbarStripEnabled === false` (the on/off button in the admin) or the strip has no entries; otherwise it needs an upcoming event unless `topbarStripOnlyWithEvent: false`. `SITE_CONFIG.topbarStripWeeks` is the lead time in weeks (0 = every future date); `topbarStripLeadDays()` converts it and still understands the legacy `topbarStripDays`. All editable under *Vereinsinfo › Laufschrift*
 - `GROUPS` — array for the three groups: Garde, Musikzug, Vorsitz (drives the home-page `GroupsBlock`)
-- `PEOPLE` — board members with `id`, `initial`, `name`, `role`, `group`, `dotColor`, `bio`, `contact`
+- `PEOPLE` — board members with `id`, `initial`, `photo` (nullable — image path or uploaded data URL; without it the card shows `initial`), `name`, `role`, `group`, `dotColor`, `bio`, `contact`
 - `TAGS` — filter tags for `NewsFeed`
 - `GARDE` / `MUSIKZUG` / `VORSITZ` — detailed objects for sub-pages (facts, groups, highlights, schedule/repertoire/responsibilities, history)
-- `SPONSORS_TIERS` — three tiers (`Hauptsponsor`, `Premium`, `Förderer`), each with `tier`, `color`, `desc`, `sponsors[]`
-- `SPONSORS` — flat array of sponsor names derived from `SPONSORS_TIERS`, used in the scrolling marquee
+- `SPONSORS_TIERS` — three tiers (`Hauptsponsor`, `Premium`, `Förderer`), each with `tier`, `color`, `desc`, `sponsors[]`. A sponsor is `{ name, branch, since, logo, url }`; `logo` (nullable) is an image path or uploaded data URL, `url` turns the card into a link
+- `SPONSORS` — flat array of sponsor names derived from `SPONSORS_TIERS`, kept for older callers
+- `sponsorList()` — all sponsors as objects incl. `logo` and their tier, read through `window`; this is what the marquee uses
 - `PHOTOS` — gallery items with `id`, `src` (nullable), `title`, `date`, `year`, `group`, `album` (occasion), `size` (web res), `hdSize`
 - `PHOTO_GROUPS` — the default gallery groups (`Garde`, `Musikzug`, `Präsidium`, `Allgemein`); editable in the admin under *Einstellungen › Galerie*
 - `photoYear(photo)` — helper that returns a photo's year, falling back to parsing `date` for older localStorage data written before `year` existed
@@ -115,9 +153,10 @@ Login checks against `DEMO_USERS` first, then the `nazumido_registry`.
 - `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`, `openInNewTab`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
 - `ticketState(event)` — `{ open, reason, at, opensAt, cfg }` for one date. `reason` is `open`, `off` (master switch off), `event-off` (`tickets` not set on the event), `past`, or `soon` (still outside the `openWeeks` window — `opensAt` says when it opens). `reservableEvents()` returns the currently bookable dates, ascending
 - `loadReservations()` / `saveReservations(list)` / `addReservation(entry)` — reservation store in `localStorage` under `nazumido_reservations`; `addReservation` stamps `id`, `code` (e.g. `NZ-4F2QK`) and `at`
-- `DEMO_USERS` — hardcoded login credentials (see Auth section above)
+- `RIGHTS` / `ROLES` — rights catalog and role definitions, plus the helpers `roles()`, `roleInfo(id)`, `userRights(user)`, `hasRight(user, right)`, `currentUser()`, `canDownloadHd(user)` (see Auth section above)
+- `DEMO_USERS` / `demoUsers()` — predefined logins; `demoUsers()` reads them through `window` so accounts added in the admin count too
 - `SITE_CONFIG` — site-wide texts and figures (season, contact data, `topbarStrip` plus `topbarStripEnabled` / `topbarStripOnlyWithEvent` / `topbarStripWeeks`, `gallery`, `tickets`)
-- `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`
+- `INTERNAL` — role-keyed arrays of internal documents/links shown in `MemberDashboard`. An entry is `{ kind, icon, title, meta, right? }`; `kind` is `doc`, `photos` (links to the gallery) or `admin` (links to the admin panel), and `right` hides the entry from accounts lacking that right
 
 ## Ticket reservation
 
@@ -155,8 +194,8 @@ There is exactly **one** admin UI: the React panel on the `#admin` route
 (`public/admin.jsx`), styled with the Nazumido brand tokens (red/green/gold on
 cream, Instrument Serif headings, DM Mono labels). It edits all site content:
 Events, Neuigkeiten, **Galerie**, Vereinsinfo, Personen, Gruppen, Sponsoren,
-Mitglieder-Inhalte and Einstellungen, and stores everything in `localStorage`
-(`nzadm_*` keys).
+**Benutzer**, Mitglieder-Inhalte and Einstellungen, and stores everything in
+`localStorage` (`nzadm_*` keys).
 
 A second, Worker-backed dashboard (`public/admin/`, `public/login.html`, D1)
 used to live at `/admin` and `/login`; it was removed because it only covered
@@ -178,6 +217,30 @@ Its markup uses the `.adm-*` classes defined at the bottom of `styles.css`
 (`.adm-card`, `.adm-field`, `.adm-btn`, `.adm-navitem`, `.adm-photo-grid`,
 `.adm-power`, …) rather than inline styles — keep new admin UI on those classes
 so it stays in sync with the site design.
+
+### Bild-Uploads
+
+`ImgField` (admin.jsx) is the shared editor for every image that is not a
+gallery photo — currently sponsor logos and person photos. It shows a preview,
+a file picker and a path input side by side: pick a file and it is stored as a
+data URL, or type `assets/…` to reference a file that ships with the site.
+`readImageFile(file, max, cb)` does the reading and downscales to `max` pixels
+edge length via canvas (PNG stays PNG so logos keep transparency, SVG is passed
+through untouched) — uploads land in `localStorage`, which holds only a few MB.
+`saveData` therefore catches the quota error and tells the user instead of
+failing silently; when it hits, the change lives only until the page reloads.
+
+### Benutzer
+
+`AdmUsers` (**Benutzer** tab) has three sections: *Konten* edits the predefined
+logins (`DEMO_USERS`) — name, e-mail, password, role, group and, via the
+"Rechte individuell setzen" toggle, a per-account `rights` array that overrides
+the role. *Rollen & Rechte* edits `ROLES` (label, colour, description, whether
+the role is selectable at registration, and its rights); a role still assigned
+to an account cannot be deleted. *Registrierungen* lists the self-registered
+accounts from `nazumido_registry` — that key belongs to `auth.jsx`, not to the
+`nzadm_*` namespace, so it is read and written directly and survives
+*Einstellungen › Daten › Zurücksetzen*.
 
 ### Ticket-Einstellungen
 
@@ -211,7 +274,9 @@ the photo strips on the group sub-pages — renaming them empties those strips.
 
 Saving goes through `saveData(key, data)`, which writes `nzadm_<KEY>` to
 `localStorage` **and** updates `window[KEY]`, so the public pages reflect
-changes immediately. `app.jsx` re-applies those overrides on every page load.
+changes immediately. `app.jsx` re-applies those overrides on every page load —
+a new admin-editable key has to be added to that list in `app.jsx` and to the
+reset list in `AdmSettings`, otherwise the change is lost on reload.
 
 ## CSS conventions
 

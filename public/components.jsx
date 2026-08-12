@@ -48,6 +48,12 @@ function TopBar({ route, navigate, user, onLogout }) {
           </ul>
           {user ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} className="nav-user-area">
+              {hasRight(user, 'admin') && (
+                <a className="nav-adminlink" href="#admin"
+                  onClick={(e) => { e.preventDefault(); navigate('admin'); }}>
+                  Verwaltung
+                </a>
+              )}
               <button className="nav-cta" style={{ background: 'var(--ink)' }}
                 onClick={() => navigate('mitglieder')}>
                 <span style={{ width: 22, height: 22, borderRadius: 999, background: 'var(--red)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--serif)', fontSize: 14 }}>
@@ -82,6 +88,12 @@ function TopBar({ route, navigate, user, onLogout }) {
             onClick={(e) => { e.preventDefault(); navigate(user ? 'mitglieder' : 'login'); setMobileOpen(false); }}>
             {user ? `Mitgliederbereich (${user.name})` : 'Mitglieder-Login'}
           </a>
+          {user && hasRight(user, 'admin') && (
+            <a href="#admin"
+              onClick={(e) => { e.preventDefault(); navigate('admin'); setMobileOpen(false); }}>
+              Verwaltung
+            </a>
+          )}
         </div>
       </div>
     </header>
@@ -490,12 +502,17 @@ function TicketForm({ event, onBack, backLabel, standalone }) {
 }
 
 // ---------- Sponsors marquee ----------
+// Sponsoren mit hinterlegtem Logo laufen als Bild mit, alle anderen als Name.
 function SponsorsMarquee() {
+  const list = sponsorList();
+  if (!list.length) return null;
   return (
     <section className="sponsors" aria-label="Sponsoren">
       <div className="sponsors-track">
-        {[...SPONSORS, ...SPONSORS].map((s, i) => (
-          <span key={i}>★ {s}</span>
+        {[...list, ...list].map((s, i) => (
+          s.logo
+            ? <span key={i} className="with-logo"><img src={s.logo} alt={s.name} loading="lazy" /></span>
+            : <span key={i}>★ {s.name}</span>
         ))}
       </div>
     </section>
@@ -546,6 +563,27 @@ function GroupsBlock({ navigate }) {
 }
 
 // ---------- People ----------
+// Eine Personenkarte — mit Foto, sonst mit dem Kürzel als Platzhalter.
+// Wird auf der Startseite und im Präsidiums-Bereich verwendet.
+function PersonCard({ person }) {
+  const p = person;
+  const tone = p.dotColor === 'green' ? 'green' : p.dotColor === 'gold' ? 'gold' : '';
+  return (
+    <div className="person">
+      <div className={'person-avatar ' + tone + (p.photo ? ' has-photo' : '')}>
+        {p.photo ? <img src={p.photo} alt={p.name} loading="lazy" /> : p.initial}
+      </div>
+      <div>
+        <h4>{p.name}</h4>
+        <div className="role">{p.role}</div>
+      </div>
+      <p className="bio">{p.bio}</p>
+      {p.phone && <div className="contact">{p.phone}</div>}
+      <div className="contact">{p.contact}</div>
+    </div>
+  );
+}
+
 function PeopleBlock() {
   return (
     <section className="block" id="people" style={{ background: 'var(--cream)' }}>
@@ -563,20 +601,7 @@ function PeopleBlock() {
           </p>
         </div>
         <div className="people-grid">
-          {PEOPLE.map(p => (
-            <div key={p.id} className="person">
-              <div className={"person-avatar " + (p.dotColor === 'green' ? 'green' : p.dotColor === 'gold' ? 'gold' : '')}>
-                {p.initial}
-              </div>
-              <div>
-                <h4>{p.name}</h4>
-                <div className="role">{p.role}</div>
-              </div>
-              <p className="bio">{p.bio}</p>
-              {p.phone && <div className="contact">{p.phone}</div>}
-              <div className="contact">{p.contact}</div>
-            </div>
-          ))}
+          {(window.PEOPLE || PEOPLE).map(p => <PersonCard key={p.id} person={p} />)}
         </div>
       </div>
     </section>
@@ -694,8 +719,9 @@ function Modal({ item, onClose, user }) {
   if (!item) return null;
   const isEvent = !!item.kind && item.d;
   const isPhoto = !!item.hdSize;
-  // HD-Download: entweder angemeldet oder in den Galerie-Einstellungen freigegeben
-  const hdOpen = !!user || !galleryConfig().hdMembersOnly;
+  // HD-Download: entweder in den Galerie-Einstellungen für alle freigegeben
+  // oder das Konto hat das Recht „hdfotos" (siehe Rollen im Admin)
+  const hdOpen = canDownloadHd(user);
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
@@ -724,7 +750,7 @@ function Modal({ item, onClose, user }) {
                 <>
                   <p style={{ color: 'var(--green)', fontWeight: 500 }}>
                     {user
-                      ? `Als angemeldetes Mitglied (${user.role}) kannst du die HD-Version herunterladen — ${item.hdSize}.`
+                      ? `Als ${roleInfo(user.role).label} kannst du die HD-Version herunterladen — ${item.hdSize}.`
                       : `Diese Galerie gibt die HD-Version für alle frei — ${item.hdSize}.`}
                   </p>
                   <div className="photo-modal-actions">
@@ -738,7 +764,11 @@ function Modal({ item, onClose, user }) {
                 <>
                   <div className="photo-lock-notice">
                     <strong>🔒 HD-Version</strong>
-                    <span>Die hochauflösende Fassung ({item.hdSize}) ist Mitgliedern vorbehalten. Melde dich an, um sie herunterzuladen.</span>
+                    <span>
+                      {user
+                        ? `Die hochauflösende Fassung (${item.hdSize}) ist für die Rolle „${roleInfo(user.role).label}" nicht freigegeben.`
+                        : `Die hochauflösende Fassung (${item.hdSize}) ist Mitgliedern vorbehalten. Melde dich an, um sie herunterzuladen.`}
+                    </span>
                   </div>
                   <div className="photo-modal-actions">
                     <button className="btn outline-dark">Web-Version teilen</button>
@@ -815,5 +845,5 @@ function Modal({ item, onClose, user }) {
 
 Object.assign(window, {
   TopBar, Hero, Welcome, NewsFeed, EventsBand, SponsorsMarquee,
-  GroupsBlock, PeopleBlock, ContactBlock, Footer, Modal, TicketForm, openTicketTab,
+  GroupsBlock, PersonCard, PeopleBlock, ContactBlock, Footer, Modal, TicketForm, openTicketTab,
 });

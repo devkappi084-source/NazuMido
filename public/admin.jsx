@@ -8,12 +8,23 @@ const PW_KEY   = 'nzadm_pw';
 const DEFAULT_PW = 'admin2026';
 
 function saveData(key, data) {
-  localStorage.setItem(PFX + key, JSON.stringify(data));
   window[key] = data;
   if (key === 'SPONSORS_TIERS') {
-    const flat = data.flatMap(t => t.sponsors.map(s => s.name));
-    window.SPONSORS = flat;
-    localStorage.setItem(PFX + 'SPONSORS', JSON.stringify(flat));
+    window.SPONSORS = data.flatMap(t => t.sponsors.map(s => s.name));
+  }
+  try {
+    localStorage.setItem(PFX + key, JSON.stringify(data));
+    if (key === 'SPONSORS_TIERS') {
+      localStorage.setItem(PFX + 'SPONSORS', JSON.stringify(window.SPONSORS));
+    }
+    return true;
+  } catch (e) {
+    // Hochgeladene Bilder liegen als Data-URL im selben Speicher — der ist
+    // je nach Browser bei ~5 MB voll. Die Änderung gilt dann nur bis zum Neuladen.
+    alert('Der Browserspeicher ist voll — die Änderung wurde nicht dauerhaft gesichert.\n\n'
+      + 'Entferne ein paar hochgeladene Bilder oder hinterlege sie als Pfad '
+      + '(z. B. assets/logo.png) statt als Upload.');
+    return false;
   }
 }
 
@@ -30,6 +41,78 @@ function loadData(key) {
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+
+// Bilddatei einlesen und als Data-URL zurückgeben. Vorher wird auf `max` Pixel
+// Kantenlänge verkleinert — die Bilder landen im localStorage, und der fasst
+// nur wenige MB, ein Originalfoto würde ihn allein schon sprengen.
+function readImageFile(file, max, cb) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { cb(null, 'Bitte eine Bilddatei wählen (PNG, JPG, SVG …).'); return; }
+  const reader = new FileReader();
+  reader.onerror = () => cb(null, 'Datei konnte nicht gelesen werden.');
+  reader.onload = () => {
+    const src = reader.result;
+    // SVG bleibt unverändert — Vektorgrafik verliert beim Rastern ihre Schärfe
+    if (file.type === 'image/svg+xml') { cb(src, null); return; }
+    const img = new Image();
+    img.onerror = () => cb(null, 'Bild konnte nicht geladen werden.');
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      if (scale === 1 && src.length < 400000) { cb(src, null); return; }
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * scale);
+      cv.height = Math.round(img.height * scale);
+      const ctx = cv.getContext('2d');
+      // PNG behält Transparenz (Logos!), alles andere wird als JPEG kleiner
+      const png = file.type === 'image/png';
+      if (!png) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      cb(png ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.82), null);
+    };
+    img.src = src;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Bildfeld: Vorschau, Datei-Upload und Pfad-Eingabe in einem.
+// `value` ist ein Pfad (assets/…) oder eine Data-URL, `null` = kein Bild.
+function ImgField({ label, hint, value, onChange, max = 640, shape = 'logo' }) {
+  const [err, setErr] = useAdmSt('');
+  const inputId = 'imgf-' + (label || '').replace(/\W+/g, '') + '-' + React.useId();
+  const pick = e => {
+    const file = e.target.files && e.target.files[0];
+    setErr('');
+    readImageFile(file, max, (src, error) => {
+      if (error) setErr(error); else onChange(src);
+    });
+    e.target.value = '';
+  };
+  return (
+    <div className="adm-field adm-imgfield">
+      <label htmlFor={inputId}>{label}</label>
+      <div className="adm-imgrow">
+        <div className={'adm-imgprev ' + shape}>
+          {value ? <img src={value} alt="" /> : <span>kein Bild</span>}
+        </div>
+        <div className="adm-imgctl">
+          <input id={inputId} type="file" accept="image/*" onChange={pick} />
+          <Inp value={value && value.slice(0, 5) === 'data:' ? '' : (value || '')}
+            placeholder="oder Pfad: assets/logo.png"
+            onChange={e => onChange(e.target.value || null)} />
+          <div className="adm-imgactions">
+            <label className="adm-btn ghost sm" htmlFor={inputId}>Bild wählen…</label>
+            {value && <Btn v="ghost" className="sm" onClick={() => { setErr(''); onChange(null); }}>Entfernen</Btn>}
+          </div>
+          {value && value.slice(0, 5) === 'data:' && (
+            <p className="adm-hint">Hochgeladen · {Math.round(value.length / 1024)} KB im Browserspeicher</p>
+          )}
+          {hint && !err && <p className="adm-hint">{hint}</p>}
+          {err && <p className="adm-err" style={{ margin: '6px 0 0' }}>{err}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Galerie-Gruppen sind in den Einstellungen änderbar — daher bei jedem Render
 // frisch lesen statt einmalig beim Laden festhalten.
@@ -955,15 +1038,15 @@ function AdmPeople({ onSave }) {
     setItems(next); saveData('PEOPLE', next); setOpen(null); onSave('Person gelöscht');
   };
   const add = () => {
-    const p = { id: uid(), initial: '?', name: 'Neue Person', role: '', group: 'Präsidium', dotColor: 'red', bio: '', contact: '' };
+    const p = { id: uid(), initial: '?', photo: null, name: 'Neue Person', role: '', group: 'Präsidium', dotColor: 'red', bio: '', contact: '' };
     setItems([...items, p]); setOpen(p.id); setForm({...p});
   };
 
   return (
     <div>
       <PanelHead
-        title={`${items.length} Funktionär:innen`}
-        desc="Erscheinen auf der Startseite und im Präsidiums-Bereich."
+        title={`${items.length} Funktionär:innen · ${items.filter(p => p.photo).length} mit Foto`}
+        desc="Erscheinen auf der Startseite und im Präsidiums-Bereich. Fotos sind optional — ohne Foto steht das Kürzel auf der Karte."
         action={<Btn onClick={add}>+ Person hinzufügen</Btn>}
       />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
@@ -990,6 +1073,12 @@ function AdmPeople({ onSave }) {
                 <Fld label="Telefon (optional)">
                   <Inp value={form.phone || ''} onChange={e => setForm({...form, phone: e.target.value || undefined})} />
                 </Fld>
+                <ImgField
+                  label="Foto (optional)"
+                  hint="Quadratisch wirkt am besten. Ohne Foto zeigt die Karte das Kürzel."
+                  shape="square" max={600}
+                  value={form.photo || null}
+                  onChange={src => setForm({...form, photo: src})} />
                 <Fld label="Biografie">
                   <Txt value={form.bio} onChange={e => setForm({...form, bio: e.target.value})} />
                 </Fld>
@@ -1002,8 +1091,9 @@ function AdmPeople({ onSave }) {
             ) : (
               <div>
                 <div className="adm-row" style={{ marginBottom: 12, cursor: 'default' }}>
-                  <div className={'adm-avatar ' + (p.dotColor || 'red')}>
-                    <span className="dot"></span>{p.initial}
+                  <div className={'adm-avatar ' + (p.dotColor || 'red') + (p.photo ? ' has-photo' : '')}>
+                    <span className="dot"></span>
+                    {p.photo ? <img src={p.photo} alt={p.name} /> : p.initial}
                   </div>
                   <div className="grow">
                     <div className="t">{p.name}</div>
@@ -1144,16 +1234,18 @@ function AdmSponsors({ onSave }) {
     const next = tiers.map((t, i) => i !== ti ? t : {...t, sponsors: t.sponsors.filter((_, j) => j !== si)});
     setTiers(next); saveData('SPONSORS_TIERS', next); onSave('Sponsor gelöscht');
   };
-  const addSponsor = ti => setTiers(tiers.map((t, i) => i !== ti ? t : {...t, sponsors: [...t.sponsors, { name: 'Neuer Sponsor', since: new Date().getFullYear(), branch: '' }]}));
+  const addSponsor = ti => setTiers(tiers.map((t, i) => i !== ti ? t : {...t, sponsors: [...t.sponsors, { name: 'Neuer Sponsor', since: new Date().getFullYear(), branch: '', logo: null, url: '' }]}));
   const save = () => { saveData('SPONSORS_TIERS', tiers); onSave('Sponsoren gespeichert'); };
 
   const accent = { Hauptsponsor: 'accent-red', Premium: 'accent-green', Förderer: 'accent-gold' };
+  const total = tiers.reduce((a, t) => a + t.sponsors.length, 0);
+  const logos = tiers.reduce((a, t) => a + t.sponsors.filter(s => s.logo).length, 0);
 
   return (
     <div>
       <PanelHead
-        title={`${tiers.reduce((a, t) => a + t.sponsors.length, 0)} Partner`}
-        desc="Drei Stufen — Reihenfolge und Farbe entsprechen der Sponsorenseite."
+        title={`${total} Partner · ${logos} mit Logo`}
+        desc="Drei Stufen — Reihenfolge und Farbe entsprechen der Sponsorenseite. Logos erscheinen auf der Sponsorenseite und im Laufband der Startseite."
         action={<Btn onClick={save}>Alle Sponsoren speichern</Btn>}
       />
       {tiers.map((tier, ti) => (
@@ -1171,6 +1263,13 @@ function AdmSponsors({ onSave }) {
                   <Inp value={s.branch} onChange={e => updSponsor(ti, si, 'branch', e.target.value)} placeholder="Branche" />
                   <Inp type="number" value={s.since} onChange={e => updSponsor(ti, si, 'since', +e.target.value)} placeholder="Seit" />
                 </div>
+                <Inp value={s.url || ''} onChange={e => updSponsor(ti, si, 'url', e.target.value)}
+                  placeholder="Website (optional): https://…" style={{ marginTop: 8 }} />
+                <ImgField
+                  label="Logo"
+                  hint="Breite Logos wirken am besten. Ohne Logo erscheint nur der Name."
+                  value={s.logo || null} max={480}
+                  onChange={src => updSponsor(ti, si, 'logo', src)} />
               </div>
             ))}
           </div>
@@ -1185,35 +1284,329 @@ function AdmSponsors({ onSave }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BENUTZER (Konten, Rollen, Rechte)
+// ═══════════════════════════════════════════════════════════════════════════════
+const REGISTRY_KEY = 'nazumido_registry';
+
+function rightCatalog() {
+  const r = window.RIGHTS;
+  return Array.isArray(r) && r.length ? r : [{ id: 'intern', label: 'Mitgliederbereich', desc: '' }];
+}
+
+// Selbst registrierte Konten liegen außerhalb des Admin-Speichers
+function loadRegistry() {
+  try {
+    const list = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
+}
+
+function saveRegistry(list) {
+  try { localStorage.setItem(REGISTRY_KEY, JSON.stringify(list)); } catch (e) {}
+}
+
+// Rechte-Kästchen für ein Konto oder eine Rolle
+function RightsPicker({ value, onChange }) {
+  const set = (id, on) => onChange(on ? [...value, id] : value.filter(r => r !== id));
+  return (
+    <div className="adm-rights">
+      {rightCatalog().map(r => (
+        <label key={r.id} className={'adm-right' + (value.indexOf(r.id) !== -1 ? ' on' : '')}>
+          <input type="checkbox" checked={value.indexOf(r.id) !== -1}
+            onChange={e => set(r.id, e.target.checked)} />
+          <span className="box" aria-hidden>✓</span>
+          <span className="txt"><b>{r.label}</b><em>{r.desc}</em></span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function AdmUsers({ onSave }) {
+  const [section, setSection] = useAdmSt('konten');
+  const [users, setUsers] = useAdmSt(() => loadData('DEMO_USERS'));
+  const [roleList, setRoleList] = useAdmSt(() => loadData('ROLES'));
+  const [open, setOpen] = useAdmSt(null);
+  const [form, setForm] = useAdmSt({});
+  const [reg, setReg] = useAdmSt(loadRegistry);
+  const [err, setErr] = useAdmSt('');
+
+  const roleOf = id => (roleList.find(r => r.id === id) || roleList[0] || { id: 'Mitglied', label: 'Mitglied', rights: [] });
+  const rightsOf = u => Array.isArray(u.rights) ? u.rights : (roleOf(u.role).rights || []);
+
+  // ---- Konten ----
+  const edit = (u, i) => { setErr(''); setOpen(i); setForm({ ...u }); };
+  const saveUser = i => {
+    const mail = String(form.email || '').trim().toLowerCase();
+    if (!mail || !form.name) { setErr('Name und E-Mail sind Pflicht.'); return; }
+    if (users.some((u, j) => j !== i && String(u.email).toLowerCase() === mail)) {
+      setErr('Diese E-Mail ist schon vergeben.'); return;
+    }
+    if (!form.password) { setErr('Bitte ein Passwort vergeben.'); return; }
+    const clean = { ...form, email: mail, avatar: (form.avatar || form.name.charAt(0)).toUpperCase().slice(0, 2) };
+    if (!Array.isArray(clean.rights)) delete clean.rights;
+    if (!clean.group) delete clean.group;
+    const next = users.map((u, j) => j === i ? clean : u);
+    setUsers(next); saveData('DEMO_USERS', next); setOpen(null); setErr(''); onSave('Konto gespeichert');
+  };
+  const delUser = i => {
+    if (!confirm('Konto wirklich löschen?')) return;
+    const next = users.filter((_, j) => j !== i);
+    setUsers(next); saveData('DEMO_USERS', next); setOpen(null); onSave('Konto gelöscht');
+  };
+  const addUser = () => {
+    const u = { email: '', password: '', name: 'Neues Konto', role: (roleList[0] || {}).id || 'Mitglied', group: '', avatar: 'N' };
+    const next = [...users, u];
+    setUsers(next); edit(u, next.length - 1);
+  };
+
+  // ---- Rollen ----
+  const updRole = (i, k, v) => setRoleList(roleList.map((r, j) => j === i ? { ...r, [k]: v } : r));
+  const saveRoles = () => {
+    saveData('ROLES', roleList);
+    onSave('Rollen gespeichert');
+  };
+  const addRole = () => setRoleList([...roleList, {
+    id: 'Rolle' + (roleList.length + 1), label: 'Neue Rolle', color: 'green',
+    desc: '', rights: ['intern'], signup: false,
+  }]);
+  const delRole = i => {
+    const r = roleList[i];
+    if (users.some(u => u.role === r.id)) { alert('Diese Rolle ist noch Konten zugewiesen — bitte zuerst umstellen.'); return; }
+    if (!confirm(`Rolle „${r.label}" löschen?`)) return;
+    const next = roleList.filter((_, j) => j !== i);
+    setRoleList(next); saveData('ROLES', next); onSave('Rolle gelöscht');
+  };
+
+  // ---- Registrierungen ----
+  const updReg = (i, k, v) => {
+    const next = reg.map((u, j) => j === i ? { ...u, [k]: v } : u);
+    setReg(next); saveRegistry(next);
+  };
+  const delReg = i => {
+    if (!confirm('Registrierung löschen?')) return;
+    const next = reg.filter((_, j) => j !== i);
+    setReg(next); saveRegistry(next); onSave('Registrierung gelöscht');
+  };
+  const approve = i => {
+    const u = reg[i];
+    updReg(i, 'role', u.requestedRole);
+    const next = reg.map((x, j) => j === i ? { ...x, role: u.requestedRole, requestedRole: undefined } : x);
+    setReg(next); saveRegistry(next); onSave('Rolle freigeschaltet');
+  };
+
+  return (
+    <div>
+      <div className="adm-chips">
+        {[['konten','👤 Konten'],['rollen','🔑 Rollen & Rechte'],['registriert','📝 Registrierungen']].map(([id, label]) => (
+          <Chip key={id} active={section === id} onClick={() => setSection(id)}>{label}</Chip>
+        ))}
+      </div>
+
+      {section === 'konten' && (
+        <div>
+          <PanelHead
+            title={`${users.length} Konten`}
+            desc="Vordefinierte Logins für den Mitgliederbereich. Die Rolle bestimmt die Rechte — pro Konto lässt sie sich überschreiben."
+            action={<Btn onClick={addUser}>+ Konto anlegen</Btn>}
+          />
+          <div className="adm-note">
+            Konten liegen wie alle Inhalte im Browserspeicher — sie gelten für dieses
+            Gerät. Das Passwort ist im Klartext gespeichert, also bitte keine echten
+            Passwörter verwenden.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+            {users.map((u, i) => (
+              <div key={i} className={'adm-card' + (open === i ? ' open' : '') + ' accent-' + (roleOf(u.role).color === 'ink' ? 'red' : (roleOf(u.role).color || 'green'))} style={{ marginBottom: 0 }}>
+                {open === i ? (
+                  <div>
+                    <div className="adm-grid-2">
+                      <Fld label="Name"><Inp value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} /></Fld>
+                      <Fld label="Kürzel"><Inp value={form.avatar || ''} maxLength={2} onChange={e => setForm({...form, avatar: e.target.value})} /></Fld>
+                      <Fld label="E-Mail"><Inp value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} placeholder="name@nazumido.at" /></Fld>
+                      <Fld label="Passwort"><Inp value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})} /></Fld>
+                      <Fld label="Rolle">
+                        <Sel value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                          {roleList.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                        </Sel>
+                      </Fld>
+                      <Fld label="Gruppe (optional)">
+                        <Sel value={form.group || ''} onChange={e => setForm({...form, group: e.target.value})}>
+                          <option value="">—</option>
+                          <option>Präsidium</option><option>Garde</option><option>Musikzug</option>
+                        </Sel>
+                      </Fld>
+                    </div>
+                    <Toggle
+                      label="Rechte individuell setzen"
+                      desc="Aus: das Konto erbt die Rechte seiner Rolle."
+                      checked={Array.isArray(form.rights)}
+                      onChange={on => setForm({...form, rights: on ? (roleOf(form.role).rights || []).slice() : undefined})}
+                    />
+                    {Array.isArray(form.rights)
+                      ? <RightsPicker value={form.rights} onChange={v => setForm({...form, rights: v})} />
+                      : (
+                        <p className="adm-hint" style={{ marginTop: 8 }}>
+                          Erbt {(roleOf(form.role).rights || []).length} Rechte von „{roleOf(form.role).label}".
+                        </p>
+                      )}
+                    {err && <p className="adm-err">{err}</p>}
+                    <div className="adm-actions">
+                      <Btn className="sm" onClick={() => saveUser(i)}>Speichern</Btn>
+                      <Btn v="ghost" className="sm" onClick={() => { setOpen(null); setErr(''); }}>Abbrechen</Btn>
+                      <Btn v="danger" className="sm right" onClick={() => delUser(i)}>Löschen</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="adm-row" style={{ marginBottom: 12, cursor: 'default' }}>
+                      <div className={'adm-avatar ' + (roleOf(u.role).color === 'ink' ? 'red' : (roleOf(u.role).color || 'green'))}>
+                        <span className="dot"></span>{u.avatar}
+                      </div>
+                      <div className="grow">
+                        <div className="t">{u.name}</div>
+                        <div className="m">{roleOf(u.role).label}{u.group ? ` · ${u.group}` : ''}</div>
+                      </div>
+                    </div>
+                    <div className="adm-kv">
+                      <span>E-Mail</span><b>{u.email || '—'}</b>
+                      <span>Passwort</span><b>{u.password || '—'}</b>
+                      <span>Rechte</span>
+                      <b>{rightsOf(u).length} {Array.isArray(u.rights) ? '(individuell)' : '(aus Rolle)'}</b>
+                    </div>
+                    <Btn v="ghost" className="sm block" onClick={() => edit(u, i)}>Bearbeiten</Btn>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {section === 'rollen' && (
+        <div>
+          <PanelHead
+            title={`${roleList.length} Rollen`}
+            desc="Jede Rolle bündelt Rechte. Änderungen wirken auf alle Konten, die die Rechte von der Rolle erben."
+            action={<Btn onClick={saveRoles}>Rollen speichern</Btn>}
+          />
+          {roleList.map((r, i) => (
+            <div key={i} className={'adm-card accent-' + (r.color === 'ink' ? 'red' : (r.color || 'green'))}>
+              <div className="adm-grid-3">
+                <Fld label="Bezeichnung"><Inp value={r.label} onChange={e => updRole(i, 'label', e.target.value)} /></Fld>
+                <Fld label="Farbe">
+                  <Sel value={r.color} onChange={e => updRole(i, 'color', e.target.value)}>
+                    <option value="green">Grün</option><option value="gold">Gold</option>
+                    <option value="red">Rot</option><option value="ink">Schwarz</option>
+                  </Sel>
+                </Fld>
+                <Fld label={`Konten mit dieser Rolle`}>
+                  <Inp value={users.filter(u => u.role === r.id).length} readOnly />
+                </Fld>
+              </div>
+              <Fld label="Beschreibung (steht im Mitgliederbereich)">
+                <Inp value={r.desc || ''} onChange={e => updRole(i, 'desc', e.target.value)} />
+              </Fld>
+              <Toggle
+                label="Bei der Registrierung wählbar"
+                desc="Aus: Besucher:innen können die Rolle nur beantragen, sie wird hier freigeschaltet."
+                checked={r.signup !== false}
+                onChange={on => updRole(i, 'signup', on)}
+              />
+              <div className="adm-section-label">Rechte</div>
+              <RightsPicker value={r.rights || []} onChange={v => updRole(i, 'rights', v)} />
+              <div className="adm-actions">
+                <Btn className="sm" onClick={saveRoles}>Speichern</Btn>
+                <Btn v="danger" className="sm right" onClick={() => delRole(i)}>Rolle löschen</Btn>
+              </div>
+            </div>
+          ))}
+          <div className="adm-actions">
+            <Btn v="ghost" onClick={addRole}>+ Rolle hinzufügen</Btn>
+            <Btn onClick={saveRoles}>Rollen speichern</Btn>
+          </div>
+        </div>
+      )}
+
+      {section === 'registriert' && (
+        <div>
+          <PanelHead
+            title={`${reg.length} Selbstregistrierungen`}
+            desc="Konten, die sich über das Login-Formular angemeldet haben. Beantragte Rollen werden hier freigeschaltet."
+          />
+          {!reg.length && (
+            <div className="adm-note">In diesem Browser hat sich noch niemand selbst registriert.</div>
+          )}
+          {reg.map((u, i) => (
+            <div key={i} className="adm-card">
+              <div className="adm-grid-3">
+                <Fld label="Name"><Inp value={u.name || ''} readOnly /></Fld>
+                <Fld label="E-Mail"><Inp value={u.email || ''} readOnly /></Fld>
+                <Fld label="Rolle">
+                  <Sel value={u.role} onChange={e => updReg(i, 'role', e.target.value)}>
+                    {roleList.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                  </Sel>
+                </Fld>
+              </div>
+              <div className="adm-actions">
+                {u.requestedRole && (
+                  <Btn className="sm" onClick={() => approve(i)}>
+                    Als „{roleOf(u.requestedRole).label}" freischalten
+                  </Btn>
+                )}
+                <Btn v="danger" className="sm right" onClick={() => delReg(i)}>Löschen</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MITGLIEDER-INHALTE
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdmInternal({ onSave }) {
   const [data, setData] = useAdmSt(() => loadData('INTERNAL'));
   const [role, setRole] = useAdmSt('Mitglied');
 
-  const upd = (i, k, v) => setData({...data, [role]: data[role].map((d, j) => j === i ? {...d, [k]: v} : d)});
-  const del = i => { if (!confirm('Entfernen?')) return; setData({...data, [role]: data[role].filter((_, j) => j !== i)}); };
-  const add = () => setData({...data, [role]: [...data[role], { kind: 'doc', icon: '📄', title: 'Neues Dokument', meta: '' }]});
+  const rows = () => data[role] || [];
+  const upd = (i, k, v) => setData({...data, [role]: rows().map((d, j) => j === i ? {...d, [k]: v} : d)});
+  const del = i => { if (!confirm('Entfernen?')) return; setData({...data, [role]: rows().filter((_, j) => j !== i)}); };
+  const add = () => setData({...data, [role]: [...rows(), { kind: 'doc', icon: '📄', title: 'Neues Dokument', meta: '' }]});
   const save = () => { saveData('INTERNAL', data); onSave('Mitglieder-Bereich gespeichert'); };
+
+  const roleList = (window.ROLES || []).length ? window.ROLES : [{ id: 'Mitglied', label: 'Mitglied' }];
 
   return (
     <div>
       <div className="adm-note">
         Jede Rolle sieht im Mitglieder-Dashboard nur ihre eigenen Inhalte.
-        Einträge mit <code>photos</code> verlinken auf die Fotogalerie.
+        Einträge mit <code>Galerie</code> verlinken auf die Fotogalerie, <code>Verwaltung</code>
+        auf das Admin-Panel. Die Spalte <code>Recht</code> blendet einen Eintrag
+        aus, wenn dem Konto das Recht fehlt.
       </div>
       <div className="adm-chips">
-        {['Mitglied','Trainerin','Vorstand'].map(r => (
-          <Chip key={r} active={role === r} onClick={() => setRole(r)}>{r}</Chip>
+        {roleList.map(r => (
+          <Chip key={r.id} active={role === r.id} onClick={() => setRole(r.id)}>{r.label}</Chip>
         ))}
       </div>
-      {(data[role] || []).map((doc, i) => (
-        <div key={i} className="adm-card" style={{ display: 'grid', gridTemplateColumns: '54px 1.4fr 1.4fr 110px 40px', gap: 10, alignItems: 'center' }}>
+      {!rows().length && (
+        <div className="adm-note">Für diese Rolle sind noch keine Inhalte hinterlegt.</div>
+      )}
+      {rows().map((doc, i) => (
+        <div key={i} className="adm-card" style={{ display: 'grid', gridTemplateColumns: '54px 1.4fr 1.4fr 110px 130px 40px', gap: 10, alignItems: 'center' }}>
           <Inp value={doc.icon} onChange={e => upd(i, 'icon', e.target.value)} style={{ textAlign: 'center', fontSize: 18 }} />
           <Inp value={doc.title} onChange={e => upd(i, 'title', e.target.value)} />
           <Inp value={doc.meta} onChange={e => upd(i, 'meta', e.target.value)} placeholder="Meta (Typ, Größe…)" />
           <Sel value={doc.kind} onChange={e => upd(i, 'kind', e.target.value)}>
             <option value="doc">Dokument</option><option value="photos">Galerie</option>
+            <option value="admin">Verwaltung</option>
+          </Sel>
+          <Sel value={doc.right || ''} onChange={e => upd(i, 'right', e.target.value || undefined)}>
+            <option value="">Recht: keins</option>
+            {rightCatalog().map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
           </Sel>
           <button className="adm-iconbtn" onClick={() => del(i)} aria-label="Eintrag entfernen">✕</button>
         </div>
@@ -1488,7 +1881,7 @@ function AdmSettings({ onSave }) {
 
   const resetAll = () => {
     if (!confirm('Wirklich alle Änderungen zurücksetzen? Die Seite wird danach neu geladen.')) return;
-    ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','INTERNAL','SITE_CONFIG']
+    ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','INTERNAL','SITE_CONFIG','ROLES','DEMO_USERS']
       .forEach(k => localStorage.removeItem(PFX + k));
     onSave('Zurückgesetzt — lädt neu…');
     setTimeout(() => window.location.reload(), 1200);
@@ -1526,8 +1919,9 @@ function AdmSettings({ onSave }) {
         <div className="adm-card-title">Alle Änderungen zurücksetzen</div>
         <p className="adm-card-desc">
           Setzt sämtliche im Admin gespeicherten Anpassungen auf den originalen
-          Datenstand der Website zurück — inklusive Galerie, Galerie-Gruppen und
-          Galerie-Einstellungen.
+          Datenstand der Website zurück — inklusive Galerie, Galerie-Einstellungen,
+          hochgeladener Logos und Fotos sowie Benutzerkonten und Rollen.
+          Selbstregistrierungen bleiben erhalten.
         </p>
         <Btn v="danger" onClick={resetAll}>Auf Standardwerte zurücksetzen</Btn>
       </div>
@@ -1546,7 +1940,8 @@ const ADM_TABS = [
   { id: 'info',     icon: 'ℹ️', label: 'Vereinsinfo', title: 'Vereinsinfo',     desc: 'Kennzahlen, Kontaktdaten und die Laufschrift im Seitenkopf.',              simple: true },
   { id: 'people',   icon: '👥', label: 'Personen',    title: 'Personen',        desc: 'Präsidium, Trainer:innen und Funktionär:innen der Saison.' },
   { id: 'gruppen',  icon: '🏆', label: 'Gruppen',     title: 'Gruppen',         desc: 'Detailseiten von Garde, Musikzug und Präsidium.' },
-  { id: 'sponsors', icon: '💼', label: 'Sponsoren',   title: 'Sponsoren',       desc: 'Partner und Förderer in drei Stufen.' },
+  { id: 'sponsors', icon: '💼', label: 'Sponsoren',   title: 'Sponsoren',       desc: 'Partner und Förderer in drei Stufen — mit Logo.' },
+  { id: 'users',    icon: '👤', label: 'Benutzer',    title: 'Benutzer',        desc: 'Konten für den Mitgliederbereich, Rollen und ihre Rechte.' },
   { id: 'internal', icon: '🔒', label: 'Intern',      title: 'Mitglieder-Inhalte', desc: 'Dokumente und Links im internen Bereich — je Rolle.' },
   { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie, Ticket-Reservierung, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
 ];
@@ -1622,6 +2017,7 @@ function AdminPage({ navigate }) {
             {active.id === 'people'   && <AdmPeople   onSave={setToast} />}
             {active.id === 'gruppen'  && <AdmGruppen  onSave={setToast} />}
             {active.id === 'sponsors' && <AdmSponsors onSave={setToast} />}
+            {active.id === 'users'    && <AdmUsers    onSave={setToast} />}
             {active.id === 'internal' && <AdmInternal onSave={setToast} />}
             {active.id === 'settings' && <AdmSettings onSave={setToast} />}
           </div>
