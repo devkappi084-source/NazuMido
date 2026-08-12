@@ -73,6 +73,8 @@ const NEWS = [
   },
 ];
 
+// `tickets: true` schaltet die Online-Reservierung für einen Termin frei
+// (Rahmenbedingungen: SITE_CONFIG.tickets bzw. Admin › Einstellungen › Tickets).
 const EVENTS = [
   {
     id: 'e1',
@@ -83,6 +85,10 @@ const EVENTS = [
     time: '14:00 Uhr',
     where: 'Hauptplatz Micheldorf',
     year: 2026,
+    tickets: true,
+    price: 'Tribünenplatz 8 €',
+    seats: 200,
+    ticketNote: 'Reservierte Tribünenplätze bleiben bis 13:45 Uhr frei.',
   },
   {
     id: 'e2',
@@ -93,6 +99,10 @@ const EVENTS = [
     time: '19:30 Uhr',
     where: 'Festsaal Micheldorf',
     year: 2026,
+    tickets: true,
+    price: '28 € · Mitglieder 24 €',
+    seats: 180,
+    ticketNote: 'Tischreservierungen ab 6 Personen bitte im Anmerkungsfeld vermerken.',
   },
   {
     id: 'e3',
@@ -103,6 +113,7 @@ const EVENTS = [
     time: '17:00 Uhr',
     where: 'Rathausplatz',
     year: 2026,
+    tickets: false,
   },
   {
     id: 'e4',
@@ -113,6 +124,7 @@ const EVENTS = [
     time: '19:30 Uhr',
     where: 'Gasthof Hofer',
     year: 2026,
+    tickets: false,
   },
   {
     id: 'e5',
@@ -123,6 +135,9 @@ const EVENTS = [
     time: '20:11 Uhr',
     where: 'Vereinslokal',
     year: 2026,
+    tickets: true,
+    price: '12 €',
+    seats: 120,
   },
 ];
 
@@ -142,6 +157,23 @@ const EVENT_MONTHS = {
   dez: 11, dec: 11, dezember: 11, december: 11,
 };
 
+// Admin-Überschreibungen liegen auf `window` — Daten deshalb immer über diese
+// beiden Helfer lesen, sonst greift man an den Änderungen aus dem Panel vorbei.
+function siteConfig() {
+  return (typeof window !== 'undefined' && window.SITE_CONFIG) || SITE_CONFIG;
+}
+
+function allEvents() {
+  const e = typeof window !== 'undefined' && window.EVENTS;
+  return Array.isArray(e) ? e : EVENTS;
+}
+
+// Heute, auf Mitternacht normiert
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 // Datum eines Events als Date-Objekt (Mitternacht) — null, wenn Tag oder Monat
 // nicht lesbar sind. Ohne `year` gilt das laufende Kalenderjahr, ein Termin ohne
 // Jahresangabe ist also nach seinem Datum vorbei und rutscht nicht ins Folgejahr.
@@ -154,15 +186,29 @@ function eventDate(ev) {
   return new Date(year, m, d);
 }
 
+const MONTH_NAMES = [
+  'Jänner', 'Februar', 'März', 'April', 'Mai', 'Juni',
+  'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+];
+
+// „14. Februar 2026" — für Modal, Reservierung und Bestätigungsmail
+function dateLabel(at) {
+  return at ? `${at.getDate()}. ${MONTH_NAMES[at.getMonth()]} ${at.getFullYear()}` : '';
+}
+
+function eventDateLabel(ev) {
+  const at = eventDate(ev);
+  return at ? dateLabel(at) : `${(ev && ev.d) || ''}. ${(ev && ev.m) || ''}`.trim();
+}
+
 // Alle noch bevorstehenden Termine (heute zählt als anstehend), aufsteigend.
 // `days` > 0 begrenzt auf ein Zeitfenster, 0 bedeutet „alle künftigen“.
 function upcomingEvents(days) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = startOfToday();
   const limit = parseInt(days, 10) > 0
     ? new Date(today.getFullYear(), today.getMonth(), today.getDate() + parseInt(days, 10))
     : null;
-  return (window.EVENTS || EVENTS)
+  return allEvents()
     .map(ev => ({ ev, at: eventDate(ev) }))
     .filter(x => x.at && x.at >= today && (!limit || x.at <= limit))
     .sort((a, b) => a.at - b.at)
@@ -454,6 +500,87 @@ const INTERNAL = {
   ],
 };
 
+// ----- Tickets / Online-Reservierung -----
+// Standardwerte; im Admin unter „Einstellungen › Tickets" überschreibbar
+// (gespeichert als SITE_CONFIG.tickets).
+const TICKET_DEFAULTS = {
+  enabled:        true,    // Online-Reservierung überhaupt anbieten
+  showInEvents:   true,    // Reservieren-Button direkt in der Terminliste
+  ctaLabel:       'Tickets reservieren',
+  title:          'Tickets reservieren',
+  lead:           'Reserviere deine Plätze online — wir legen sie unter deinem Namen an der Abendkasse bereit.',
+  successTitle:   'Reservierung notiert!',
+  successText:    'Wir haben deine Anfrage aufgenommen und melden uns per E-Mail. Bitte hol deine Karten spätestens 15 Minuten vor Beginn an der Abendkasse ab.',
+  closedText:     'Für diesen Termin gibt es keine Online-Reservierung. Karten bekommst du an der Abendkasse oder telefonisch im Vereinslokal.',
+  openWeeks:      0,       // Reservierung startet X Wochen vor dem Termin (0 = sofort)
+  maxPerBooking:  10,      // Höchstzahl Plätze je Reservierung
+  requirePhone:   false,   // Telefonnummer als Pflichtfeld
+  notifyEmail:    '',      // Zieladresse der Reservierungsmail (leer = SITE_CONFIG.email)
+  showMailCopy:   true,    // Nach dem Absenden Link „Kopie per E-Mail senden"
+};
+
+// Zusammengeführte Ticket-Einstellungen (Standard + Admin-Überschreibungen).
+function ticketConfig() {
+  const merged = Object.assign({}, TICKET_DEFAULTS, siteConfig().tickets || {});
+  const max = parseInt(merged.maxPerBooking, 10);
+  merged.maxPerBooking = max > 0 ? max : TICKET_DEFAULTS.maxPerBooking;
+  const weeks = parseInt(merged.openWeeks, 10);
+  merged.openWeeks = weeks > 0 ? weeks : 0;
+  return merged;
+}
+
+// Kann für diesen Termin gerade online reserviert werden?
+// reason: 'open' | 'off' (global aus) | 'event-off' (Termin ohne Reservierung)
+//         | 'past' (Termin vorbei) | 'soon' (Vorlauf noch nicht erreicht)
+function ticketState(ev) {
+  const cfg = ticketConfig();
+  if (!cfg.enabled) return { open: false, reason: 'off', cfg };
+  if (!ev || !ev.tickets) return { open: false, reason: 'event-off', cfg };
+  const at = eventDate(ev);
+  if (!at) return { open: false, reason: 'event-off', cfg };
+  const today = startOfToday();
+  if (at < today) return { open: false, reason: 'past', at, cfg };
+  if (cfg.openWeeks > 0) {
+    const opensAt = new Date(at.getFullYear(), at.getMonth(), at.getDate() - cfg.openWeeks * 7);
+    if (today < opensAt) return { open: false, reason: 'soon', at, opensAt, cfg };
+  }
+  return { open: true, reason: 'open', at, cfg };
+}
+
+// Termine, für die aktuell reserviert werden kann — aufsteigend nach Datum
+function reservableEvents() {
+  return allEvents()
+    .filter(ev => ticketState(ev).open)
+    .sort((a, b) => eventDate(a) - eventDate(b));
+}
+
+const RESERVATIONS_KEY = 'nazumido_reservations';
+
+// Reservierungen liegen im localStorage des jeweiligen Browsers (kein Backend).
+function loadReservations() {
+  try {
+    const raw = localStorage.getItem(RESERVATIONS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
+}
+
+function saveReservations(list) {
+  try { localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list)); } catch (e) {}
+  return list;
+}
+
+// Legt eine Reservierung an und gibt sie inkl. Kennung zurück
+function addReservation(entry) {
+  const res = Object.assign({
+    id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    code: 'NZ-' + Math.random().toString(36).slice(2, 7).toUpperCase(),
+    at: new Date().toISOString(),
+  }, entry);
+  saveReservations([res, ...loadReservations()]);
+  return res;
+}
+
 const SITE_CONFIG = {
   season:        '11.11.2025 — 17.02.2026',
   memberCount:   '184',
@@ -470,6 +597,7 @@ const SITE_CONFIG = {
   website:       'https://www.nazu-mido.at',
   websiteLabel:  'www.nazu-mido.at',
   gallery:       Object.assign({}, GALLERY_DEFAULTS),
+  tickets:       Object.assign({}, TICKET_DEFAULTS),
   topbarStrip: [
     'Session 2026 · Helau & Narri!',
     'Großer Faschingsumzug 14. Februar',
@@ -477,22 +605,41 @@ const SITE_CONFIG = {
     'Mini-Garde sucht Nachwuchs',
     'Musikzug holt Bronze',
   ],
+  // Hauptschalter der Laufschrift (Admin › Vereinsinfo › Laufschrift)
+  topbarStripEnabled: true,
   // Laufschrift nur zeigen, solange ein Termin bevorsteht
   topbarStripOnlyWithEvent: true,
-  topbarStripDays: 0,   // 0 = jedes künftige Event, sonst Vorlauf in Tagen
+  topbarStripWeeks: 0,  // 0 = jedes künftige Event, sonst Vorlauf in Wochen
 };
+
+// Vorlauf der Laufschrift in Tagen. Eingestellt wird in Wochen; ältere
+// Datenstände (localStorage) haben stattdessen noch `topbarStripDays`.
+function topbarStripLeadDays() {
+  const cfg = siteConfig();
+  if (cfg.topbarStripWeeks !== undefined && cfg.topbarStripWeeks !== null && cfg.topbarStripWeeks !== '') {
+    const w = parseInt(cfg.topbarStripWeeks, 10);
+    return w > 0 ? w * 7 : 0;
+  }
+  const d = parseInt(cfg.topbarStripDays, 10);
+  return d > 0 ? d : 0;
+}
 
 // Soll die Laufschrift im Kopfbereich angezeigt werden?
 function showTopbarStrip() {
-  const cfg = window.SITE_CONFIG || SITE_CONFIG;
+  const cfg = siteConfig();
+  if (cfg.topbarStripEnabled === false) return false;
   if (!(cfg.topbarStrip || []).some(t => String(t).trim())) return false;
   if (cfg.topbarStripOnlyWithEvent === false) return true;
-  return upcomingEvents(cfg.topbarStripDays).length > 0;
+  return upcomingEvents(topbarStripLeadDays()).length > 0;
 }
 
 Object.assign(window, {
   NEWS, EVENTS, GROUPS, PEOPLE, TAGS, SPONSORS, SPONSORS_TIERS,
   GARDE, MUSIKZUG, VORSITZ, PHOTOS, PHOTO_GROUPS, photoYear, photoGroups,
   GALLERY_DEFAULTS, galleryConfig, eventDate, upcomingEvents, showTopbarStrip,
+  siteConfig, allEvents, startOfToday, topbarStripLeadDays,
+  MONTH_NAMES, dateLabel, eventDateLabel,
+  TICKET_DEFAULTS, ticketConfig, ticketState, reservableEvents,
+  RESERVATIONS_KEY, loadReservations, saveReservations, addReservation,
   DEMO_USERS, INTERNAL, SITE_CONFIG,
 });

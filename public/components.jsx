@@ -268,6 +268,10 @@ function NewsFeed({ onOpen }) {
 
 // ---------- Events ----------
 function EventsBand({ onOpen }) {
+  const cfg = ticketConfig();
+  // Reservierung direkt aus der Liste heraus öffnen (Modal startet im Formular)
+  const openTickets = (e, ev) => { ev.stopPropagation(); onOpen({ ...e, _tickets: true }); };
+  const nextTicketEvent = reservableEvents()[0];
   return (
     <section className="block events-band" id="events">
       <div className="container">
@@ -285,7 +289,9 @@ function EventsBand({ onOpen }) {
         </div>
 
         <div className="events-list">
-          {EVENTS.map(e => (
+          {allEvents().map(e => {
+            const st = ticketState(e);
+            return (
             <div key={e.id} className="event-row" onClick={() => onOpen(e)}>
               <div className="event-date">
                 <span className="d">{e.d}</span>
@@ -294,6 +300,17 @@ function EventsBand({ onOpen }) {
               <div className="event-title">
                 <h3>{e.title}</h3>
                 <span className="kind">{e.kind}</span>
+                {cfg.showInEvents && st.open && (
+                  <button className="event-ticket" onClick={ev => openTickets(e, ev)}>
+                    <span className="dot" aria-hidden></span>{cfg.ctaLabel}
+                  </button>
+                )}
+                {cfg.showInEvents && st.reason === 'soon' && (
+                  <span className="event-ticket soon">
+                    <span className="dot" aria-hidden></span>
+                    Reservierung ab {dateLabel(st.opensAt)}
+                  </span>
+                )}
               </div>
               <div className="event-desc">{e.desc}</div>
               <div className="event-where">
@@ -307,20 +324,140 @@ function EventsBand({ onOpen }) {
                 </svg>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="events-foot">
           <p style={{ color: 'rgba(247,241,230,0.7)', fontSize: 14, margin: 0 }}>
-            Alle Termine und vergangene Veranstaltungen findest du im Archiv.
+            {nextTicketEvent
+              ? `Online-Reservierung offen für „${nextTicketEvent.title}" am ${eventDateLabel(nextTicketEvent)}.`
+              : 'Alle Termine und vergangene Veranstaltungen findest du im Archiv.'}
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button className="btn">Tickets sichern</button>
+            {nextTicketEvent && (
+              <button className="btn" onClick={() => onOpen({ ...nextTicketEvent, _tickets: true })}>
+                {cfg.ctaLabel}
+              </button>
+            )}
             <button className="btn ghost">In Kalender exportieren</button>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+// ---------- Ticket-Reservierung (im Event-Modal) ----------
+function TicketForm({ event, onBack }) {
+  const cfg = ticketConfig();
+  const [form, setForm] = useState({ name: '', email: '', phone: '', count: 2, note: '' });
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState(null);
+  const max = cfg.maxPerBooking;
+  const when = eventDateLabel(event);
+  const f = k => ({ value: form[k], onChange: e => { setForm({ ...form, [k]: e.target.value }); setErr(''); } });
+
+  const submit = (e) => {
+    e.preventDefault();
+    const count = parseInt(form.count, 10);
+    if (!form.name.trim())  { setErr('Bitte gib deinen Namen an.'); return; }
+    if (!form.email.trim()) { setErr('Ohne E-Mail-Adresse können wir die Reservierung nicht bestätigen.'); return; }
+    if (cfg.requirePhone && !form.phone.trim()) { setErr('Bitte gib eine Telefonnummer an.'); return; }
+    if (!(count > 0) || count > max) { setErr(`Bitte 1 bis ${max} Plätze wählen.`); return; }
+    setDone(addReservation({
+      eventId: event.id,
+      eventTitle: event.title,
+      eventDate: when,
+      eventTime: event.time || '',
+      eventWhere: event.where || '',
+      name: form.name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      count,
+      note: form.note.trim(),
+    }));
+  };
+
+  if (done) {
+    const to = cfg.notifyEmail || siteConfig().email || '';
+    const body = [
+      `Reservierung ${done.code}`,
+      `Veranstaltung: ${done.eventTitle} am ${done.eventDate}${done.eventTime ? ', ' + done.eventTime : ''}`,
+      `Name: ${done.name}`,
+      `E-Mail: ${done.email}`,
+      done.phone ? `Telefon: ${done.phone}` : null,
+      `Plätze: ${done.count}`,
+      done.note ? `Anmerkung: ${done.note}` : null,
+    ].filter(Boolean).join('\n');
+    const mailto = `mailto:${to}?subject=${encodeURIComponent(`Ticket-Reservierung ${done.code} — ${done.eventTitle}`)}&body=${encodeURIComponent(body)}`;
+    return (
+      <div className="ticket-done">
+        <span className="code">{done.code}</span>
+        <h3>{cfg.successTitle}</h3>
+        <p>{cfg.successText}</p>
+        <ul className="ticket-summary">
+          <li><span>Veranstaltung</span><strong>{done.eventTitle}</strong></li>
+          <li><span>Termin</span><strong>{done.eventDate}{done.eventTime ? ` · ${done.eventTime}` : ''}</strong></li>
+          <li><span>Plätze</span><strong>{done.count}</strong></li>
+          <li><span>Auf den Namen</span><strong>{done.name}</strong></li>
+        </ul>
+        <div className="photo-modal-actions">
+          {cfg.showMailCopy && to && (
+            <a className="btn" href={mailto}>Reservierung per E-Mail senden</a>
+          )}
+          <button className="btn outline-dark" onClick={onBack}>Zurück zum Termin</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form className="ticket-form" onSubmit={submit}>
+      <button type="button" className="ticket-back" onClick={onBack}>← Zurück zum Termin</button>
+      <h3>{cfg.title}</h3>
+      <p className="ticket-lead">{cfg.lead}</p>
+      <ul className="ticket-summary">
+        <li><span>Veranstaltung</span><strong>{event.title}</strong></li>
+        <li><span>Termin</span><strong>{when}{event.time ? ` · ${event.time}` : ''}</strong></li>
+        {event.where && <li><span>Ort</span><strong>{event.where}</strong></li>}
+        {event.price && <li><span>Preis</span><strong>{event.price}</strong></li>}
+        {event.seats && <li><span>Kontingent</span><strong>{event.seats} Plätze</strong></li>}
+      </ul>
+      {event.ticketNote && <div className="ticket-note">{event.ticketNote}</div>}
+      <div className="field-row">
+        <div className="field">
+          <label>Name *</label>
+          <input {...f('name')} placeholder="Anna Berger" />
+        </div>
+        <div className="field">
+          <label>E-Mail *</label>
+          <input type="email" {...f('email')} placeholder="anna@example.at" />
+        </div>
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label>Telefon {cfg.requirePhone ? '*' : '(optional)'}</label>
+          <input {...f('phone')} placeholder="+43 664 …" />
+        </div>
+        <div className="field">
+          <label>Plätze (max. {max})</label>
+          <input type="number" min="1" max={max} {...f('count')} />
+        </div>
+      </div>
+      <div className="field">
+        <label>Anmerkung (optional)</label>
+        <input {...f('note')} placeholder="Tisch bei der Bühne, Kinderstuhl …" />
+      </div>
+      {err && <p className="ticket-err">{err}</p>}
+      <button type="submit" className="btn" style={{ width: '100%', justifyContent: 'center' }}>
+        {cfg.ctaLabel} →
+      </button>
+      <p className="ticket-fineprint">
+        Unverbindliche Reservierung — wir melden uns per E-Mail. Deine Daten
+        verwenden wir ausschließlich für diese Veranstaltung.
+      </p>
+    </form>
   );
 }
 
@@ -579,11 +716,14 @@ function Footer({ navigate }) {
 
 // ---------- Modal ----------
 function Modal({ item, onClose, user }) {
+  const [tickets, setTickets] = useState(false);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Reservierung direkt öffnen, wenn der Termin über einen Ticket-Button kam
+  useEffect(() => { setTickets(!!(item && item._tickets && ticketState(item).open)); }, [item]);
   if (!item) return null;
   const isEvent = !!item.kind && item.d;
   const isPhoto = !!item.hdSize;
@@ -640,9 +780,12 @@ function Modal({ item, onClose, user }) {
               )}
             </>
           ) : isEvent ? (
+            tickets ? (
+              <TicketForm event={item} onBack={() => setTickets(false)} />
+            ) : (
             <>
               <div className="meta">
-                <span>{item.d}. {item.m === 'Feb' ? 'Februar' : item.m === 'Mar' ? 'März' : item.m === 'Nov' ? 'November' : item.m} · {item.day}</span>
+                <span>{eventDateLabel(item)} · {item.day}</span>
                 <span>· {item.time}</span>
                 <span>· {item.where}</span>
               </div>
@@ -650,11 +793,36 @@ function Modal({ item, onClose, user }) {
               <p style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase' }}>{item.kind}</p>
               <p>{item.desc}</p>
               <p>Wir freuen uns auf zahlreiche Besucherinnen und Besucher. Für Verpflegung ist gesorgt, der Eintritt ist — sofern nicht anders angegeben — frei.</p>
+              {(() => {
+                const st = ticketState(item);
+                if (st.reason === 'soon') {
+                  return (
+                    <div className="ticket-hint">
+                      <strong>🎫 Online-Reservierung</strong>
+                      <span>Ab {dateLabel(st.opensAt)} kannst du hier Plätze für diesen Termin reservieren{item.price ? ` — ${item.price}` : ''}.</span>
+                    </div>
+                  );
+                }
+                if (!st.open && st.reason !== 'past') {
+                  return (
+                    <div className="ticket-hint">
+                      <strong>🎫 Karten</strong>
+                      <span>{st.cfg.closedText}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 22, flexWrap: 'wrap' }}>
-                <button className="btn">Tickets sichern</button>
+                {ticketState(item).open && (
+                  <button className="btn" onClick={() => setTickets(true)}>
+                    {ticketConfig().ctaLabel}
+                  </button>
+                )}
                 <button className="btn outline-dark">Anfahrt anzeigen</button>
               </div>
             </>
+            )
           ) : (
             <>
               <div className="meta">
@@ -680,5 +848,5 @@ function Modal({ item, onClose, user }) {
 
 Object.assign(window, {
   TopBar, Hero, Welcome, NewsFeed, EventsBand, SponsorsMarquee,
-  GroupsBlock, PeopleBlock, NewsletterBlock, Footer, Modal,
+  GroupsBlock, PeopleBlock, NewsletterBlock, Footer, Modal, TicketForm,
 });
