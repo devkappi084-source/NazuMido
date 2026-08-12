@@ -34,7 +34,18 @@ bucket_name = "nazumido-uploads"
 #   npx wrangler secret put JWT_SECRET
 #   npx wrangler secret put ADMIN_PASSWORD
 # ---------------------------------------------------------------------------
+#
+# Für die Bestätigungsmails der Ticket-Reservierung zusätzlich MAIL_FROM und
+# CLUB_EMAIL eintragen (der Anbieter-Schlüssel bleibt ein Secret):
+#   npx wrangler secret put RESEND_API_KEY   # oder BREVO_API_KEY / MAILGUN_API_KEY
+# Siehe DEPLOY-CLOUDFLARE.md, Schritt 3b.
+# ---------------------------------------------------------------------------
 [vars]
 ADMIN_USERNAME = "admin"
 JWT_EXPIRES_IN = "604800"     # 7 Tage in Sekunden
 MAX_UPLOAD_SIZE = "5242880"   # 5 MB
+# MAIL_FROM  = "Faschingsverein Nazumido <tickets@nazu-mido.at>"
+# CLUB_EMAIL = "Nazu.Mido@gmx.at"
+# MAIL_PROVIDER = "resend"    # nur nötig, wenn mehrere Schlüssel gesetzt sind
+# MAILGUN_DOMAIN = "mg.nazu-mido.at"
+# MAILGUN_REGION = "eu"
