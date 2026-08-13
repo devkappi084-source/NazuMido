@@ -381,6 +381,9 @@ function TicketForm({ event, onBack, backLabel, standalone }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', count: 2, note: '' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState(null);
+  // Zustand der automatischen Bestätigungsmail: null = kein Versuch,
+  // 'sending' | 'sent' | 'failed'
+  const [mail, setMail] = useState(null);
   const max = cfg.maxPerBooking;
   const when = eventDateLabel(event);
   const f = k => ({ value: form[k], onChange: e => { setForm({ ...form, [k]: e.target.value }); setErr(''); } });
@@ -393,7 +396,7 @@ function TicketForm({ event, onBack, backLabel, standalone }) {
     if (cfg.requirePhone && !form.phone.trim()) { setErr('Bitte gib eine Telefonnummer an.'); return; }
     if (!(count > 0) || count > max) { setErr(`Bitte 1 bis ${max} Plätze wählen.`); return; }
     const at = eventDate(event);
-    setDone(addReservation({
+    const entry = addReservation({
       eventId: event.id,
       eventTitle: event.title,
       eventDate: when,
@@ -406,7 +409,18 @@ function TicketForm({ event, onBack, backLabel, standalone }) {
       phone: form.phone.trim(),
       count,
       note: form.note.trim(),
-    }));
+    });
+    setDone(entry);
+    // Bestätigungsmail übernimmt der Worker; klappt das nicht (kein Backend,
+    // Anbieter nicht eingerichtet), bleibt der mailto-Link als Weg.
+    if (cfg.autoMail !== false) {
+      setMail({ state: 'sending' });
+      submitReservation(entry).then(r => {
+        setMail(r.ok && r.mail && r.mail.visitor === 'sent'
+          ? { state: 'sent' }
+          : { state: 'failed', reason: (r.mail && r.mail.visitor) || r.reason });
+      });
+    }
   };
 
   if (done) {
@@ -433,12 +447,21 @@ function TicketForm({ event, onBack, backLabel, standalone }) {
           <li><span>Plätze</span><strong>{done.count}</strong></li>
           <li><span>Auf den Namen</span><strong>{done.name}</strong></li>
         </ul>
+        {mail && (
+          <div className={'ticket-mailstate' + (mail.state === 'sent' ? ' ok' : mail.state === 'failed' ? ' warn' : '')}>
+            {mail.state === 'sending' && <>Bestätigung wird an <strong>{done.email}</strong> geschickt …</>}
+            {mail.state === 'sent' && <>✓ Bestätigung an <strong>{done.email}</strong> geschickt.</>}
+            {mail.state === 'failed' && <>Die Bestätigungsmail konnte nicht automatisch verschickt werden. Lade sie als PDF herunter{cfg.showMailCopy && to ? ' oder schick uns die Reservierung per E-Mail' : ''} — wir melden uns.</>}
+          </div>
+        )}
         <div className="photo-modal-actions">
-          {cfg.showMailCopy && to && (
-            <a className="btn" href={mailto}>Reservierung per E-Mail senden</a>
+          {cfg.offerPdf !== false && window.NzPdf && (
+            <button className="btn" onClick={() => window.NzPdf.saveReservationPdf(done, cfg)}>
+              Bestätigung als PDF
+            </button>
           )}
-          {standalone && (
-            <button className="btn outline-dark" onClick={() => window.print()}>Bestätigung drucken</button>
+          {cfg.showMailCopy && to && (!mail || mail.state !== 'sent') && (
+            <a className="btn outline-dark" href={mailto}>Reservierung per E-Mail senden</a>
           )}
           <button className="btn outline-dark" onClick={onBack}>{backLabel || 'Zurück zum Termin'}</button>
         </div>

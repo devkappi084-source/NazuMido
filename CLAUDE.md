@@ -25,6 +25,7 @@ The three CDN `<script>` tags carry Subresource-Integrity hashes. Bumping React 
 public/                     — everything served to the browser
   index.html / Nazumido.html  — Entry point (identical); loads CDN scripts + .jsx files
   styles.css                  — All CSS, including CSS variables
+  pdf.jsx                     — Minimal PDF writer (reservation confirmation)
   data.jsx                    — All static content (single source of truth)
   components.jsx              — Shared UI components
   pages-detail.jsx            — Sub-page components
@@ -44,7 +45,8 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 
 | File | Exports to `window` |
 |---|---|
-| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `sponsorList`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `findEvent`, `loadReservations`, `saveReservations`, `addReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `RIGHTS`, `ROLES`, `roles`, `roleInfo`, `userRights`, `hasRight`, `currentUser`, `canDownloadHd`, `demoUsers`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
+| `pdf.jsx` | `NzPdf` (`createDoc`, `reservationDoc`, `saveReservationPdf`) |
+| `data.jsx` | `NEWS`, `EVENTS`, `GROUPS`, `PEOPLE`, `TAGS`, `SPONSORS`, `SPONSORS_TIERS`, `sponsorList`, `GARDE`, `MUSIKZUG`, `VORSITZ`, `PHOTOS`, `PHOTO_GROUPS`, `photoYear`, `photoGroups`, `GALLERY_DEFAULTS`, `galleryConfig`, `TICKET_DEFAULTS`, `ticketConfig`, `ticketState`, `reservableEvents`, `findEvent`, `loadReservations`, `saveReservations`, `addReservation`, `submitReservation`, `siteConfig`, `allEvents`, `dateLabel`, `eventDateLabel`, `RIGHTS`, `ROLES`, `roles`, `roleInfo`, `userRights`, `hasRight`, `currentUser`, `canDownloadHd`, `demoUsers`, `DEMO_USERS`, `INTERNAL`, `SITE_CONFIG` |
 | `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PersonCard`, `PeopleBlock`, `ContactBlock`, `Footer`, `Modal`, `TicketForm`, `openTicketTab` |
 | `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage`, `ReservationPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
@@ -150,7 +152,7 @@ everyone, otherwise the `hdfotos` right decides. `PhotoCard`/`GroupPhotos` in
 - `photoYear(photo)` — helper that returns a photo's year, falling back to parsing `date` for older localStorage data written before `year` existed
 - `photoGroups()` — current gallery groups, read from `window.PHOTO_GROUPS` so admin overrides apply
 - `GALLERY_DEFAULTS` / `galleryConfig()` — gallery settings (texts, filters, sort order, `photosPerGroup`, `hdMembersOnly`, `showInNav`, HD section). `galleryConfig()` merges the defaults with `window.SITE_CONFIG.gallery` and is the only way gallery code should read these values — never read `SITE_CONFIG.gallery` directly, or admin overrides get missed
-- `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`, `openInNewTab`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
+- `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`, `openInNewTab`, `autoMail`, `offerPdf`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
 - `ticketState(event)` — `{ open, reason, at, opensAt, cfg }` for one date. `reason` is `open`, `off` (master switch off), `event-off` (`tickets` not set on the event), `past`, or `soon` (still outside the `openWeeks` window — `opensAt` says when it opens). `reservableEvents()` returns the currently bookable dates, ascending
 - `loadReservations()` / `saveReservations(list)` / `addReservation(entry)` — reservation store in `localStorage` under `nazumido_reservations`; `addReservation` stamps `id`, `code` (e.g. `NZ-4F2QK`) and `at`
 - `RIGHTS` / `ROLES` — rights catalog and role definitions, plus the helpers `roles()`, `roleInfo(id)`, `userRights(user)`, `hasRight(user, right)`, `currentUser()`, `canDownloadHd(user)` (see Auth section above)
@@ -178,15 +180,44 @@ instead of the button ("Reservierung ab …" or the configurable `closedText`);
 dates that *are* open.
 
 Submitting writes the reservation to `localStorage` (`nazumido_reservations`,
-same store for both paths since it is the same origin) and offers a prefilled
-`mailto:` link to `tickets.notifyEmail` (falling back to `SITE_CONFIG.email`).
-**There is no backend for this**: the stored copy lives only in the visitor's
-browser, so the e-mail is the channel that actually reaches the club. The
-admin's *Reservierungen* list (Events tab) therefore only shows what was booked
-on that same device. It filters by date, exports CSV and opens a print view
-(own tab, `window.print()`) with a per-date attendee list — name, contact,
-seats, code, note and a tick box, plus the seat total. Moving this to the
-Worker API (D1) is the same open step as for the rest of the content.
+same store for both paths since it is the same origin) **and** posts it to the
+Worker via `submitReservation()` → `POST /api/reservations`, which stores it in
+D1 and sends the confirmation mail (see *Confirmation mail* below). The success
+view shows the mail status; while it is unsent it still offers the prefilled
+`mailto:` link to `tickets.notifyEmail` (falling back to `SITE_CONFIG.email`),
+and `tickets.offerPdf` adds the **Bestätigung als PDF** button
+(`NzPdf.saveReservationPdf`, `public/pdf.jsx`).
+
+The admin's *Reservierungen* list (Events tab) reads the `localStorage` copy, so
+it shows what was booked on that device — the server-side record lives in D1 and
+is fetched with `GET /api/admin/reservations` (JWT, not wired into the panel
+yet). The list filters by date, exports CSV and opens a print view (own tab,
+`window.print()`) with a per-date attendee list — name, contact, seats, code,
+note and a tick box, plus the seat total.
+
+### Confirmation mail
+
+`POST /api/reservations` (public, `src/worker.js`) validates the payload, keeps
+a row in the `reservations` table (created on demand, also in `schema.sql`),
+throttles to 10 bookings per hour and IP hash, and sends two mails: the
+confirmation to the visitor and a copy to `CLUB_EMAIL`. Workers cannot send mail
+themselves — `sendMail()` talks to the HTTP API of **Resend**, **Brevo** or
+**Mailgun**, picked via `MAIL_PROVIDER` or whichever key is set
+(`RESEND_API_KEY` / `BREVO_API_KEY` / `MAILGUN_API_KEY`, plus `MAIL_FROM`).
+Without those the endpoint answers `mail.configured: false`, nothing is sent and
+the site falls back to the `mailto:` link. Setup steps are in
+DEPLOY-CLOUDFLARE.md (Schritt 3b); the toggle is *Einstellungen › Tickets ›
+Bestätigung* (`tickets.autoMail`).
+
+### Confirmation PDF
+
+`public/pdf.jsx` writes PDF 1.4 by hand (Helvetica, WinAnsi encoding) instead of
+pulling in a library — the CDN scripts are SRI-pinned, so every extra dependency
+means another hash to maintain. `NzPdf.createDoc()` offers `text`, `row`,
+`line`, `rect`, `space` on an A4 page with automatic page breaks;
+`reservationDoc(res)` builds the branded confirmation and `saveReservationPdf`
+downloads it as `Reservierung-<code>.pdf`. Only WinAnsi characters survive —
+emoji are dropped, umlauts, ß and € are fine.
 
 ## Admin panel
 
@@ -202,7 +233,8 @@ used to live at `/admin` and `/login`; it was removed because it only covered
 Beiträge and wrote to a database the public site never reads. Both paths now
 redirect to the React panel. The `/api/*` routes in `src/worker.js` stay in
 place for a possible future server-side store — don't add a second UI on top
-of them.
+of them. The one route the site itself calls is `POST /api/reservations` (ticket
+confirmation mail, see above); everything else still lives in `localStorage`.
 
 **Caveat worth knowing:** because storage is `localStorage`, edits are visible
 only in the browser that made them — they do not reach site visitors. Moving
@@ -246,8 +278,8 @@ accounts from `nazumido_registry` — that key belongs to `auth.jsx`, not to the
 
 `AdmTicketSettings` (*Einstellungen › Tickets*) holds everything global about
 the online reservation: the `PowerBtn` master switch, the list-button, own-tab
-and phone toggles, `openWeeks` / `maxPerBooking` / `notifyEmail`, and the form
-texts.
+and phone toggles, the *Bestätigung* card (`autoMail`, `offerPdf`),
+`openWeeks` / `maxPerBooking` / `notifyEmail`, and the form texts.
 Saving writes `SITE_CONFIG.tickets`. Which dates are bookable is per event in
 the **Events** tab (`tickets`, `price`, `seats`, `ticketNote`), where the editor
 also shows the live `ticketStatusText` for the date and `AdmReservations` lists

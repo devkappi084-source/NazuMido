@@ -2055,6 +2055,24 @@ a.sponsor-card:hover .name { color: var(--red); }
   letter-spacing: 0.16em;
 }
 .ticket-done .photo-modal-actions a.btn { text-decoration: none; }
+.ticket-mailstate {
+  margin: 18px 0 4px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--cream);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.ticket-mailstate.ok {
+  border-color: rgba(30,110,63,0.35);
+  background: rgba(30,110,63,0.08);
+  color: var(--green-deep);
+}
+.ticket-mailstate.warn {
+  border-color: rgba(201,162,75,0.5);
+  background: rgba(201,162,75,0.12);
+}
 
 /* ---------- Reservierungsseite (#reservierung) ---------- */
 .reservation-panel {

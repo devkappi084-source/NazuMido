@@ -1812,6 +1812,30 @@ function AdmTicketSettings({ onSave }) {
       </div>
 
       <div className="adm-card">
+        <div className="adm-card-title">Bestätigung</div>
+        <p className="adm-card-desc">
+          Was die Besucher:in nach dem Absenden bekommt: eine automatische
+          Bestätigungsmail und die Bestätigung als PDF zum Herunterladen.
+        </p>
+        <div className="adm-toggles">
+          <Toggle label="Bestätigungsmail automatisch senden"
+            desc="Server verschickt Bestätigung an die Besucher:in und eine Kopie an den Verein"
+            checked={t.autoMail !== false} onChange={v => set('autoMail', v)} />
+          <Toggle label="Bestätigung als PDF anbieten"
+            desc="Download-Button mit der fertigen Bestätigung"
+            checked={t.offerPdf !== false} onChange={v => set('offerPdf', v)} />
+        </div>
+        <div className="adm-note">
+          Der Mailversand läuft über den Cloudflare-Worker (<code>/api/reservations</code>)
+          und braucht einmalig einen Mailanbieter: Schlüssel als Secret setzen
+          (<code>RESEND_API_KEY</code>, <code>BREVO_API_KEY</code> oder <code>MAILGUN_API_KEY</code>)
+          sowie <code>MAIL_FROM</code> und <code>CLUB_EMAIL</code> eintragen — Details in
+          DEPLOY-CLOUDFLARE.md. Solange das fehlt, wird die Reservierung nur gespeichert und
+          die Besucher:in bekommt wie bisher den mailto-Link angeboten.
+        </div>
+      </div>
+
+      <div className="adm-card">
         <div className="adm-card-title">Zeitraum & Umfang</div>
         <p className="adm-card-desc">
           Trag alle Termine ein — die Reservierung öffnet dann von selbst die
