@@ -49,7 +49,7 @@ function accentTitle(text, color) {
 // ---------- Photo Card (shared) ----------
 function PhotoCard({ photo, onOpen }) {
   const g = galleryConfig();
-  const hdOpen = !g.hdMembersOnly || !!window.__currentUser;
+  const hdOpen = canDownloadHd();
   return (
     <div className="photo-card" onClick={() => onOpen(photo)}>
       {photo.src ? <img src={photo.src} alt={photo.title} /> : <div className="ph">Foto · {photo.title}</div>}
@@ -236,7 +236,7 @@ function GaleriePage({ navigate, onOpenPhoto }) {
               {g.hdText}
             </p>
             <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {window.__currentUser ? (
+              {currentUser() ? (
                 <button className="btn" onClick={() => navigate('mitglieder')}>Zum Mitgliederbereich</button>
               ) : g.hdMembersOnly ? (
                 <button className="btn" onClick={() => navigate('login')}>Mitglieder-Login</button>
@@ -541,19 +541,7 @@ function VorsitzPage({ navigate, onOpenPhoto }) {
             </p>
           </div>
           <div className="people-grid">
-            {PEOPLE.map(p => (
-              <div key={p.id} className="person">
-                <div className={"person-avatar " + (p.dotColor === 'green' ? 'green' : p.dotColor === 'gold' ? 'gold' : '')}>
-                  {p.initial}
-                </div>
-                <div>
-                  <h4>{p.name}</h4>
-                  <div className="role">{p.role}</div>
-                </div>
-                <p className="bio">{p.bio}</p>
-                <div className="contact">{p.contact}</div>
-              </div>
-            ))}
+            {(window.PEOPLE || PEOPLE).map(p => <PersonCard key={p.id} person={p} />)}
           </div>
         </div>
       </section>
@@ -654,7 +642,9 @@ function ReservationPage({ eventId, navigate }) {
 }
 
 function SponsorsPage({ navigate }) {
-  const totalCount = SPONSORS_TIERS.reduce((acc, t) => acc + t.sponsors.length, 0);
+  const tiers = window.SPONSORS_TIERS || SPONSORS_TIERS;
+  const totalCount = tiers.reduce((acc, t) => acc + t.sponsors.length, 0);
+  const withLogo = tiers.reduce((acc, t) => acc + t.sponsors.filter(s => s.logo).length, 0);
   return (
     <>
       <SubHero
@@ -665,30 +655,38 @@ function SponsorsPage({ navigate }) {
         tagline="Ohne unsere Sponsoren, Partner und Förderer wäre Nazumido nicht das, was es heute ist. Danke!"
         facts={[
           { label: 'Sponsoren gesamt', value: totalCount },
-          { label: 'Hauptsponsoren', value: SPONSORS_TIERS[0].sponsors.length },
+          { label: 'Hauptsponsoren', value: (tiers[0] && tiers[0].sponsors.length) || 0 },
+          { label: 'Mit Logo', value: withLogo },
           { label: 'Längste Partnerschaft', value: 'seit 1962' },
-          { label: 'Neu in 2025', value: '2 Förderer' },
         ]}
       />
 
       <section className="block">
         <div className="container">
-          {SPONSORS_TIERS.map((tier, i) => (
+          {tiers.map((tier, i) => (
             <div key={i} className={"sponsor-tier " + tier.color}>
               <div className="sponsor-tier-head">
                 <h3>{tier.tier}</h3>
                 <p>{tier.desc}</p>
               </div>
               <div className="sponsor-grid">
-                {tier.sponsors.map((s, j) => (
-                  <div key={j} className="sponsor-card">
-                    <div>
-                      <div className="name">{s.name}</div>
-                      <div className="branch">{s.branch}</div>
-                    </div>
-                    <div className="since">seit {s.since}</div>
-                  </div>
-                ))}
+                {tier.sponsors.map((s, j) => {
+                  // Mit hinterlegter Adresse wird die Karte zum Link
+                  const Tag = s.url ? 'a' : 'div';
+                  const linkProps = s.url ? { href: s.url, target: '_blank', rel: 'noopener noreferrer' } : {};
+                  return (
+                    <Tag key={j} className={'sponsor-card' + (s.logo ? ' has-logo' : '')} {...linkProps}>
+                      {s.logo && (
+                        <div className="logo"><img src={s.logo} alt={s.name} loading="lazy" /></div>
+                      )}
+                      <div>
+                        <div className="name">{s.name}</div>
+                        <div className="branch">{s.branch}</div>
+                      </div>
+                      <div className="since">seit {s.since}</div>
+                    </Tag>
+                  );
+                })}
               </div>
             </div>
           ))}
