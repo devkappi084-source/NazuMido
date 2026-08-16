@@ -136,7 +136,7 @@ everyone, otherwise the `hdfotos` right decides. `PhotoCard`/`GroupPhotos` in
 
 - `NEWS` — array of news articles with `id`, `tag`, `tagColor`, optional `image`, `date`, `readTime`, `title`, `excerpt`, `body[]`, optional `feature` flag
 - `EVENTS` — array with `id`, `d` (day number), `m` (month abbrev), optional `year`, `day` (weekday), `title`, `kind`, `desc`, `time`, `where`, plus the ticket fields `tickets` (bool — online reservation on/off for this date), `price`, `seats`, `ticketNote`
-- `eventDate(event)` / `upcomingEvents(days)` — date helpers for `EVENTS`. `eventDate` parses `d` + `m` (German or English month abbrev) with `year`, falling back to the current calendar year, so an event without a year counts as past once its date has passed. `upcomingEvents(days)` returns the future events sorted ascending, limited to the next `days` days when `days > 0`
+- `eventDate(event)` / `upcomingEvents(days)` — date helpers for `EVENTS`. `eventDate` parses `d` + `m` (German or English month name or abbrev, or the month number `1`–`12`) with `year`, falling back to the current calendar year, so an event without a year counts as past once its date has passed. It returns `null` when day or month are unreadable — such an event drops out of the calendar and out of the reservation entirely, which is why the admin sets the date through a picker rather than free text. `upcomingEvents(days)` returns the future events sorted ascending, limited to the next `days` days when `days > 0`
 - `siteConfig()` / `allEvents()` — read `SITE_CONFIG` / `EVENTS` through `window` so admin overrides apply. Bare `SITE_CONFIG` / `EVENTS` references resolve to the original module-level constants (the files are plain scripts, so `const` never lands on `window`) and silently miss admin edits — new code should use these helpers
 - `dateLabel(date)` / `eventDateLabel(event)` — German long-form date (`14. Februar 2026`)
 - `showTopbarStrip()` — whether the marquee in the `TopBar` renders. False when `SITE_CONFIG.topbarStripEnabled === false` (the on/off button in the admin) or the strip has no entries; otherwise it needs an upcoming event unless `topbarStripOnlyWithEvent: false`. `SITE_CONFIG.topbarStripWeeks` is the lead time in weeks (0 = every future date); `topbarStripLeadDays()` converts it and still understands the legacy `topbarStripDays`. All editable under *Vereinsinfo › Laufschrift*
@@ -153,7 +153,7 @@ everyone, otherwise the `hdfotos` right decides. `PhotoCard`/`GroupPhotos` in
 - `photoGroups()` — current gallery groups, read from `window.PHOTO_GROUPS` so admin overrides apply
 - `GALLERY_DEFAULTS` / `galleryConfig()` — gallery settings (texts, filters, sort order, `photosPerGroup`, `hdMembersOnly`, `showInNav`, HD section). `galleryConfig()` merges the defaults with `window.SITE_CONFIG.gallery` and is the only way gallery code should read these values — never read `SITE_CONFIG.gallery` directly, or admin overrides get missed
 - `TICKET_DEFAULTS` / `ticketConfig()` — ticket settings (`enabled`, `showInEvents`, button and form texts, `openWeeks`, `maxPerBooking`, `requirePhone`, `notifyEmail`, `showMailCopy`, `openInNewTab`, `autoMail`, `offerPdf`). `ticketConfig()` merges the defaults with `SITE_CONFIG.tickets`; like `galleryConfig()` it is the only way ticket code should read these values
-- `ticketState(event)` — `{ open, reason, at, opensAt, cfg }` for one date. `reason` is `open`, `off` (master switch off), `event-off` (`tickets` not set on the event), `past`, or `soon` (still outside the `openWeeks` window — `opensAt` says when it opens). `reservableEvents()` returns the currently bookable dates, ascending
+- `ticketState(event)` — `{ open, reason, at, opensAt, cfg }` for one date. `reason` is `open`, `off` (master switch off), `event-off` (`tickets` not set on the event), `no-date` (reservation is on but `eventDate` cannot read the date), `past`, or `soon` (still outside the `openWeeks` window — `opensAt` says when it opens). `reservableEvents()` returns the currently bookable dates, ascending
 - `loadReservations()` / `saveReservations(list)` / `addReservation(entry)` — reservation store in `localStorage` under `nazumido_reservations`; `addReservation` stamps `id`, `code` (e.g. `NZ-4F2QK`) and `at`
 - `RIGHTS` / `ROLES` — rights catalog and role definitions, plus the helpers `roles()`, `roleInfo(id)`, `userRights(user)`, `hasRight(user, right)`, `currentUser()`, `canDownloadHd(user)` (see Auth section above)
 - `DEMO_USERS` / `demoUsers()` — predefined logins; `demoUsers()` reads them through `window` so accounts added in the admin count too
@@ -284,6 +284,23 @@ Saving writes `SITE_CONFIG.tickets`. Which dates are bookable is per event in
 the **Events** tab (`tickets`, `price`, `seats`, `ticketNote`), where the editor
 also shows the live `ticketStatusText` for the date and `AdmReservations` lists
 the reservations stored in this browser.
+
+### Event-Datum im Admin
+
+`AdmEvents` edits the date through a single `<input type="date">`, not through
+the `d` / `m` / `year` fields the site stores. `eventDateValue(event)` renders
+the event as `YYYY-MM-DD` (empty when the date is unreadable) and
+`withEventDate(form, value)` writes the three fields back — plus `day`, the
+weekday, which is derived from the date instead of typed. Free-text months were
+the reason new events silently failed: a month the parser did not know left
+`eventDate` at `null`, so the event never reached the calendar and its
+reservation stayed shut with a misleading "not enabled" hint.
+
+`sortEvents(list)` orders the array by date on save (undated entries last), so a
+newly added date lands in the right place in the calendar rather than at the
+end. A newly added event that is never saved is dropped again on *Abbrechen* —
+without that it stayed in component state and rode along into `localStorage` the
+next time any other event was saved.
 
 *Vereinsinfo › Laufschrift* uses the same `PowerBtn` for the topbar strip:
 `topbarStripEnabled` hides it outright, `topbarStripOnlyWithEvent` ties it to

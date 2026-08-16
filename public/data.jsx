@@ -179,7 +179,16 @@ function startOfToday() {
 // Jahresangabe ist also nach seinem Datum vorbei und rutscht nicht ins Folgejahr.
 function eventDate(ev) {
   if (!ev) return null;
-  const m = EVENT_MONTHS[String(ev.m || '').trim().toLowerCase().replace(/\.$/, '')];
+  const raw = String(ev.m || '').trim().toLowerCase().replace(/\.$/, '');
+  let m = EVENT_MONTHS[raw];
+  // Monat auch als Zahl akzeptieren („9", „09"): das Feld wird im Admin frei
+  // getippt, und eine Zahl ist die naheliegendste Eingabe. Ohne diesen Zweig
+  // bleibt das Datum unlesbar und der Termin verschwindet lautlos aus Kalender
+  // und Reservierung.
+  if (m === undefined && /^\d{1,2}$/.test(raw)) {
+    const n = parseInt(raw, 10);
+    if (n >= 1 && n <= 12) m = n - 1;
+  }
   const d = parseInt(ev.d, 10);
   if (m === undefined || !d) return null;
   const year = parseInt(ev.year, 10) || new Date().getFullYear();
@@ -654,13 +663,16 @@ function ticketConfig() {
 
 // Kann für diesen Termin gerade online reserviert werden?
 // reason: 'open' | 'off' (global aus) | 'event-off' (Termin ohne Reservierung)
-//         | 'past' (Termin vorbei) | 'soon' (Vorlauf noch nicht erreicht)
+//         | 'no-date' (Tag/Monat unlesbar) | 'past' (Termin vorbei)
+//         | 'soon' (Vorlauf noch nicht erreicht)
 function ticketState(ev) {
   const cfg = ticketConfig();
   if (!cfg.enabled) return { open: false, reason: 'off', cfg };
   if (!ev || !ev.tickets) return { open: false, reason: 'event-off', cfg };
   const at = eventDate(ev);
-  if (!at) return { open: false, reason: 'event-off', cfg };
+  // Eigener Grund statt 'event-off': die Reservierung ist eingeschaltet, nur das
+  // Datum fehlt — im Admin muss das anders klingen als „nicht freigeschaltet".
+  if (!at) return { open: false, reason: 'no-date', cfg };
   const today = startOfToday();
   if (at < today) return { open: false, reason: 'past', at, cfg };
   if (cfg.openWeeks > 0) {

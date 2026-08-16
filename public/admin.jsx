@@ -295,30 +295,86 @@ function ticketStatusText(ev) {
   if (st.reason === 'soon') return `○ Reservierung öffnet automatisch am ${lbl(st.opensAt)}.`;
   if (st.reason === 'past') return '○ Termin ist vorbei — es kann nicht mehr reserviert werden.';
   if (st.reason === 'off')  return '○ Online-Reservierung ist global ausgeschaltet (Einstellungen › Tickets).';
+  if (st.reason === 'no-date') return '○ Ohne gültiges Datum kann nicht reserviert werden — bitte oben ein Datum wählen.';
   return '○ Für diesen Termin nicht freigeschaltet.';
+}
+
+// ─── Event-Datum ──────────────────────────────────────────────────────────────
+// Auf der Website steht das Datum als Tag/Monatskürzel/Jahr in getrennten
+// Feldern. Im Admin wird es über einen Datumswähler gesetzt: frei getippte
+// Monate („09", „September", Tippfehler) machten das Datum unlesbar, womit der
+// Termin stillschweigend aus Kalender und Reservierung fiel.
+const ADM_MONTHS = ['Jän', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const ADM_WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+// Event → „YYYY-MM-DD" für <input type="date">; '' wenn das Datum unlesbar ist
+function eventDateValue(ev) {
+  const at = window.eventDate ? window.eventDate(ev) : null;
+  if (!at) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}`;
+}
+
+// „YYYY-MM-DD" zurück in die Felder d/m/year — inkl. Wochentag, der damit
+// immer zum Datum passt statt von Hand getippt zu werden
+function withEventDate(form, value) {
+  if (!value) return { ...form, d: '', m: '', year: '', day: '' };
+  const [y, mo, da] = value.split('-').map(Number);
+  if (!y || !mo || !da) return form;
+  const at = new Date(y, mo - 1, da);
+  return {
+    ...form,
+    d: String(da).padStart(2, '0'),
+    m: ADM_MONTHS[mo - 1],
+    year: String(y),
+    day: ADM_WEEKDAYS[at.getDay()],
+  };
+}
+
+// Termine aufsteigend nach Datum; Einträge ohne lesbares Datum bleiben hinten,
+// damit ein neu angelegtes Event an der richtigen Stelle im Kalender landet
+function sortEvents(list) {
+  const key = ev => {
+    const at = window.eventDate ? window.eventDate(ev) : null;
+    return at ? at.getTime() : Infinity;
+  };
+  return [...list].sort((a, b) => key(a) - key(b));
 }
 
 function AdmEvents({ onSave }) {
   const [items, setItems] = useAdmSt(() => loadData('EVENTS'));
   const [open, setOpen] = useAdmSt(null);
   const [form, setForm] = useAdmSt({});
+  // id eines gerade angelegten, noch nie gespeicherten Events — bei „Abbrechen"
+  // fliegt es wieder raus, statt als „Neues Event" in der Liste hängenzubleiben
+  const [fresh, setFresh] = useAdmSt(null);
   const upcoming = items.filter(isUpcoming).length;
 
   const edit = ev => { setOpen(ev.id); setForm({ ...ev }); };
+  const close = () => {
+    // Nie gespeichertes Event verwerfen, sonst wandert es beim nächsten
+    // Speichern eines anderen Termins mit auf die Website
+    if (fresh) setItems(items.filter(e => e.id !== fresh));
+    setFresh(null); setOpen(null);
+  };
   const save = id => {
-    const next = items.map(e => e.id === id ? { ...form } : e);
-    setItems(next); saveData('EVENTS', next); setOpen(null);
+    const next = sortEvents(items.map(e => e.id === id ? { ...form } : e));
+    setItems(next); saveData('EVENTS', next); setFresh(null); setOpen(null);
     onSave('Event gespeichert');
   };
   const del = id => {
     if (!confirm('Event löschen?')) return;
     const next = items.filter(e => e.id !== id);
-    setItems(next); saveData('EVENTS', next); setOpen(null); onSave('Event gelöscht');
+    setItems(next); setFresh(null); setOpen(null);
+    saveData('EVENTS', next); onSave('Event gelöscht');
   };
   const add = () => {
-    const ev = { id: uid(), d: '01', m: 'Jan', year: String(new Date().getFullYear() + 1), day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '', tickets: false };
+    const t = new Date();
+    const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+    const base = { id: uid(), title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '', tickets: false };
+    const ev = withEventDate(base, iso);
     const next = [...items, ev];
-    setItems(next); setOpen(ev.id); setForm({ ...ev });
+    setItems(next); setFresh(ev.id); setOpen(ev.id); setForm({ ...ev });
   };
 
   return (
@@ -337,20 +393,20 @@ function AdmEvents({ onSave }) {
                 <Fld label="Art"><Inp value={form.kind} onChange={e => setForm({...form, kind: e.target.value})} placeholder="Gala · Eintritt frei…" /></Fld>
               </div>
               <div className="adm-grid-3">
-                <Fld label="Tag"><Inp value={form.d} onChange={e => setForm({...form, d: e.target.value})} placeholder="14" /></Fld>
-                <Fld label="Monat"><Inp value={form.m} onChange={e => setForm({...form, m: e.target.value})} placeholder="Feb" /></Fld>
-                <Fld label="Jahr"><Inp value={form.year || ''} onChange={e => setForm({...form, year: e.target.value})} placeholder={String(new Date().getFullYear())} /></Fld>
-              </div>
-              <p className="adm-card-desc" style={{ margin: '-6px 0 14px' }}>
-                {isUpcoming(form)
-                  ? '● Termin steht noch an — die Laufschrift im Kopfbereich wird angezeigt.'
-                  : '○ Termin ist vorbei. Ohne Jahresangabe gilt das laufende Jahr.'}
-              </p>
-              <div className="adm-grid-3">
-                <Fld label="Wochentag"><Inp value={form.day} onChange={e => setForm({...form, day: e.target.value})} /></Fld>
+                <Fld label="Datum">
+                  <Inp type="date" value={eventDateValue(form)}
+                    onChange={e => setForm(withEventDate(form, e.target.value))} />
+                </Fld>
                 <Fld label="Uhrzeit"><Inp value={form.time} onChange={e => setForm({...form, time: e.target.value})} /></Fld>
                 <Fld label="Ort"><Inp value={form.where} onChange={e => setForm({...form, where: e.target.value})} /></Fld>
               </div>
+              <p className="adm-card-desc" style={{ margin: '-6px 0 14px' }}>
+                {!eventDateValue(form)
+                  ? '○ Kein gültiges Datum — bitte im Feld „Datum" einen Termin wählen. Ohne Datum erscheint das Event nicht im Kalender.'
+                  : isUpcoming(form)
+                  ? `● ${form.day}, ${window.eventDateLabel ? window.eventDateLabel(form) : ''} — Termin steht noch an, die Laufschrift im Kopfbereich wird angezeigt.`
+                  : `○ ${form.day}, ${window.eventDateLabel ? window.eventDateLabel(form) : ''} — Termin ist bereits vorbei.`}
+              </p>
               <Fld label="Beschreibung">
                 <Txt value={form.desc} onChange={e => setForm({...form, desc: e.target.value})} />
               </Fld>
@@ -383,7 +439,7 @@ function AdmEvents({ onSave }) {
 
               <div className="adm-actions">
                 <Btn onClick={() => save(ev.id)}>Speichern</Btn>
-                <Btn v="ghost" onClick={() => setOpen(null)}>Abbrechen</Btn>
+                <Btn v="ghost" onClick={close}>Abbrechen</Btn>
                 <Btn v="danger" className="right" onClick={() => del(ev.id)}>Löschen</Btn>
               </div>
             </div>
