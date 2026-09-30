@@ -24,9 +24,9 @@ database_id = "9e08812e-fcd9-4be5-9d8f-20e284cadde9"
 # R2 — Objektspeicher für hochgeladene Fotos (ersetzt den /uploads-Ordner).
 # Bucket anlegen mit: `npx wrangler r2 bucket create nazumido-uploads`
 # ---------------------------------------------------------------------------
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "nazumido-uploads"
+#[[r2_buckets]]
+#binding = "BUCKET"
+#bucket_name = "nazumido-uploads"
 
 # ---------------------------------------------------------------------------
 # Nicht-geheime Variablen. GEHEIMNISSE (JWT_SECRET, ADMIN_PASSWORD) NICHT hier
