@@ -73,8 +73,6 @@ const NEWS = [
   },
 ];
 
-// `tickets: true` schaltet die Online-Reservierung für einen Termin frei
-// (Rahmenbedingungen: SITE_CONFIG.tickets bzw. Admin › Einstellungen › Tickets).
 const EVENTS = [
   {
     id: 'e1',
@@ -85,10 +83,6 @@ const EVENTS = [
     time: '14:00 Uhr',
     where: 'Hauptplatz Micheldorf',
     year: 2026,
-    tickets: true,
-    price: 'Tribünenplatz 8 €',
-    seats: 200,
-    ticketNote: 'Reservierte Tribünenplätze bleiben bis 13:45 Uhr frei.',
   },
   {
     id: 'e2',
@@ -99,10 +93,6 @@ const EVENTS = [
     time: '19:30 Uhr',
     where: 'Festsaal Micheldorf',
     year: 2026,
-    tickets: true,
-    price: '28 € · Mitglieder 24 €',
-    seats: 180,
-    ticketNote: 'Tischreservierungen ab 6 Personen bitte im Anmerkungsfeld vermerken.',
   },
   {
     id: 'e3',
@@ -113,7 +103,6 @@ const EVENTS = [
     time: '17:00 Uhr',
     where: 'Rathausplatz',
     year: 2026,
-    tickets: false,
   },
   {
     id: 'e4',
@@ -124,7 +113,6 @@ const EVENTS = [
     time: '19:30 Uhr',
     where: 'Gasthof Hofer',
     year: 2026,
-    tickets: false,
   },
   {
     id: 'e5',
@@ -135,9 +123,6 @@ const EVENTS = [
     time: '20:11 Uhr',
     where: 'Vereinslokal',
     year: 2026,
-    tickets: true,
-    price: '12 €',
-    seats: 120,
   },
 ];
 
@@ -191,7 +176,7 @@ const MONTH_NAMES = [
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
 ];
 
-// „14. Februar 2026" — für Modal, Reservierung und Bestätigungsmail
+// „14. Februar 2026" — Langform des Datums für Modal und Terminliste
 function dateLabel(at) {
   return at ? `${at.getDate()}. ${MONTH_NAMES[at.getMonth()]} ${at.getFullYear()}` : '';
 }
@@ -463,10 +448,9 @@ const GALLERY_DEFAULTS = {
   showAlbumBadge:  true,   // Anlass-Badge auf den Fotokacheln
   sort:           'neu',   // 'neu' = neueste Saison zuerst, 'alt' = älteste zuerst
   photosPerGroup:  8,      // Fotos in den Gruppen-Strips (Garde, Musikzug, Präsidium)
-  hdMembersOnly:   true,   // HD-Download nur für angemeldete Mitglieder
   showHdSection:   true,   // dunkler HD-Abschnitt am Ende der Galerie-Seite
   hdTitle:        'Fotos in voller Auflösung',
-  hdText:         'Die Web-Vorschau ist für alle da. Mitglieder laden jede Aufnahme zusätzlich in Originalgröße herunter — inklusive Archivbestand seit 2012.',
+  hdText:         'Die Web-Vorschau lädt schnell, für Druck und Archiv gibt es jede Aufnahme zusätzlich in Originalgröße — inklusive Archivbestand seit 2012.',
 };
 
 // Zusammengeführte Galerie-Einstellungen (Standard + Admin-Überschreibungen).
@@ -479,255 +463,6 @@ function galleryConfig() {
   const n = Number(merged.photosPerGroup);
   merged.photosPerGroup = n > 0 ? Math.floor(n) : GALLERY_DEFAULTS.photosPerGroup;
   return merged;
-}
-
-// ----- Rechte & Rollen -----
-// Der Rechtekatalog: jedes Recht schaltet einen Bereich im Mitgliederbereich
-// (oder den Adminzugang) frei. Rollen bündeln Rechte, einzelne Konten können
-// davon abweichen — siehe `userRights()`.
-const RIGHTS = [
-  { id: 'intern',     label: 'Mitgliederbereich', desc: 'Zugang zum internen Dashboard' },
-  { id: 'termine',    label: 'Interne Termine',   desc: 'Nicht öffentliche Termine sehen' },
-  { id: 'hdfotos',    label: 'HD-Fotodownload',   desc: 'Fotos in Originalauflösung laden' },
-  { id: 'dokumente',  label: 'Interne Dokumente', desc: 'Protokolle, Pläne und Listen öffnen' },
-  { id: 'training',   label: 'Trainingsbereich',  desc: 'Choreografien, Noten, Anwesenheit' },
-  { id: 'finanzen',   label: 'Finanzen',          desc: 'Kassenbericht und Sponsorenverträge' },
-  { id: 'mitglieder', label: 'Mitgliederverwaltung', desc: 'Konten und Rollen einsehen' },
-  { id: 'admin',      label: 'Verwaltung',        desc: 'Zugriff auf das Admin-Panel (#admin)' },
-];
-
-// Vordefinierte Rollen, aufsteigend nach Rechteumfang. `color` steuert die
-// Farbe von Rollen-Pille und Avatar (red · green · gold · ink).
-const ROLES = [
-  {
-    id: 'Mitglied', label: 'Mitglied', color: 'green', signup: true,
-    desc: 'Fördernde und passive Mitglieder: Vereinsinfos, interne Termine, HD-Fotos.',
-    rights: ['intern', 'termine', 'hdfotos'],
-  },
-  {
-    id: 'Aktiv', label: 'Aktives Mitglied', color: 'green', signup: true,
-    desc: 'Tänzerinnen und Musiker: zusätzlich alle internen Unterlagen der eigenen Gruppe.',
-    rights: ['intern', 'termine', 'hdfotos', 'dokumente'],
-  },
-  {
-    id: 'Trainerin', label: 'Trainer:in', color: 'gold', signup: false,
-    desc: 'Leitung von Garde und Musikzug: dazu Choreografien, Noten und Anwesenheitslisten.',
-    rights: ['intern', 'termine', 'hdfotos', 'dokumente', 'training'],
-  },
-  {
-    id: 'Vorstand', label: 'Vorstand', color: 'red', signup: false,
-    desc: 'Vereinsführung: dazu Finanzen, Verträge und die Mitgliederverwaltung.',
-    rights: ['intern', 'termine', 'hdfotos', 'dokumente', 'training', 'finanzen', 'mitglieder'],
-  },
-  {
-    id: 'Admin', label: 'Administrator', color: 'ink', signup: false,
-    desc: 'Vollzugriff inklusive Verwaltung der Website-Inhalte.',
-    rights: ['intern', 'termine', 'hdfotos', 'dokumente', 'training', 'finanzen', 'mitglieder', 'admin'],
-  },
-];
-
-// Aktuelle Rollenliste — im Admin (Benutzer › Rollen & Rechte) änderbar
-function roles() {
-  const r = (typeof window !== 'undefined' && window.ROLES) || ROLES;
-  return Array.isArray(r) && r.length ? r : ROLES;
-}
-
-// Rollendefinition zu einer Rollen-Id; unbekannte Rollen fallen auf „Mitglied"
-// zurück, damit alte Konten aus dem localStorage nicht rechtelos dastehen.
-function roleInfo(id) {
-  const list = roles();
-  return list.find(r => r.id === id)
-    || list.find(r => r.id === 'Mitglied')
-    || { id: id || 'Mitglied', label: id || 'Mitglied', color: 'green', rights: ['intern'] };
-}
-
-// Rechte eines Kontos: eigene `rights`-Liste (personalisiert) schlägt die Rolle
-function userRights(user) {
-  if (!user) return [];
-  if (Array.isArray(user.rights)) return user.rights;
-  return roleInfo(user.role).rights || [];
-}
-
-function hasRight(user, right) {
-  return userRights(user).indexOf(right) !== -1;
-}
-
-// Angemeldetes Konto — von app.jsx/auth.jsx auf window gespiegelt
-function currentUser() {
-  return (typeof window !== 'undefined' && window.__currentUser) || null;
-}
-
-// Darf die HD-Fassung der Fotos geladen werden?
-function canDownloadHd(user) {
-  if (!galleryConfig().hdMembersOnly) return true;
-  return hasRight(user === undefined ? currentUser() : user, 'hdfotos');
-}
-
-// ----- Mitglieder-Logins (vordefinierte Konten) -----
-// Im Admin unter „Benutzer" erweiterbar; `rights` (optional) überschreibt dort
-// die Rechte der Rolle für ein einzelnes Konto.
-const DEMO_USERS = [
-  { email: 'gast@nazumido.at', password: 'gast', name: 'Gast Mitglied', role: 'Mitglied', avatar: 'G' },
-  { email: 'aktiv@nazumido.at', password: 'aktiv', name: 'Anna Berger', role: 'Aktiv', group: 'Garde', avatar: 'A' },
-  { email: 'garde@nazumido.at', password: 'garde', name: 'Karin Schober', role: 'Trainerin', group: 'Garde', avatar: 'K' },
-  { email: 'vorstand@nazumido.at', password: 'vorstand', name: 'Markus Reiter', role: 'Vorstand', group: 'Präsidium', avatar: 'M' },
-  { email: 'admin@nazumido.at', password: 'admin', name: 'Sabine Mayer', role: 'Admin', group: 'Präsidium', avatar: 'S' },
-];
-
-// Aktuelle Kontenliste (Admin-Überschreibungen berücksichtigt)
-function demoUsers() {
-  const u = (typeof window !== 'undefined' && window.DEMO_USERS) || DEMO_USERS;
-  return Array.isArray(u) ? u : DEMO_USERS;
-}
-
-// ----- Interne Inhalte nach Rolle -----
-// `right` blendet einen Eintrag aus, wenn dem Konto das Recht fehlt.
-const INTERNAL = {
-  Mitglied: [
-    { kind: 'doc', icon: '📅', title: 'Saisonkalender intern', meta: 'PDF · 2.3 MB · aktualisiert 12.01.' },
-    { kind: 'doc', icon: '📝', title: 'Mitgliederbrief Januar', meta: 'PDF · 800 KB' },
-    { kind: 'doc', icon: '🎫', title: 'Mitglieder-Rabattcode Prinzenball', meta: '15 % Rabatt — Code MITGLIED26' },
-    { kind: 'photos', icon: '📸', title: 'HD-Fotodownload', meta: 'Alle 8 Galerien · ZIP bis zu 240 MB', right: 'hdfotos' },
-  ],
-  Aktiv: [
-    { kind: 'doc', icon: '📅', title: 'Saisonkalender intern', meta: 'PDF · 2.3 MB · aktualisiert 12.01.' },
-    { kind: 'doc', icon: '👗', title: 'Kostümplan & Ausgabe', meta: 'PDF · 1.2 MB', right: 'dokumente' },
-    { kind: 'doc', icon: '🚌', title: 'Fahrgemeinschaften Auswärtsauftritte', meta: 'Liste · 6 Termine', right: 'dokumente' },
-    { kind: 'doc', icon: '🎫', title: 'Mitglieder-Rabattcode Prinzenball', meta: '15 % Rabatt — Code MITGLIED26' },
-    { kind: 'photos', icon: '📸', title: 'HD-Fotodownload', meta: 'Alle Galerien der eigenen Gruppe', right: 'hdfotos' },
-  ],
-  Trainerin: [
-    { kind: 'doc', icon: '🎵', title: 'Choreografie-Notation Saison 2026', meta: 'PDF · 4.1 MB · vertraulich', right: 'training' },
-    { kind: 'doc', icon: '🎬', title: 'Probevideos Garde (privat)', meta: 'Vimeo · 24 Clips', right: 'training' },
-    { kind: 'doc', icon: '📋', title: 'Anwesenheitsliste Q1', meta: 'Excel · 120 KB', right: 'training' },
-    { kind: 'doc', icon: '🎫', title: 'Trainerausweis 2026', meta: 'PDF · 200 KB' },
-    { kind: 'photos', icon: '📸', title: 'HD-Fotodownload + Backstage', meta: 'Erweiterte Galerie · auch Proben', right: 'hdfotos' },
-  ],
-  Vorstand: [
-    { kind: 'doc', icon: '📊', title: 'Kassenbericht Q4 2025', meta: 'PDF · 1.8 MB · vertraulich', right: 'finanzen' },
-    { kind: 'doc', icon: '📑', title: 'Sitzungsprotokolle 2025', meta: 'PDF · 12 Protokolle', right: 'dokumente' },
-    { kind: 'doc', icon: '💼', title: 'Sponsorenverträge', meta: 'Ordner · 14 Verträge', right: 'finanzen' },
-    { kind: 'doc', icon: '🗓️', title: 'Jahresplanung 2027 (Draft)', meta: 'Google Doc · Bearbeitung' },
-    { kind: 'doc', icon: '📧', title: 'Mitgliederverwaltung', meta: '184 aktive Konten', right: 'mitglieder' },
-    { kind: 'photos', icon: '📸', title: 'Komplettarchiv HD', meta: 'Alle Galerien seit 2012 · 14 GB', right: 'hdfotos' },
-  ],
-  Admin: [
-    { kind: 'admin', icon: '🛠️', title: 'Website-Verwaltung', meta: 'Events, News, Galerie, Sponsoren, Benutzer', right: 'admin' },
-    { kind: 'doc', icon: '📊', title: 'Kassenbericht Q4 2025', meta: 'PDF · 1.8 MB · vertraulich', right: 'finanzen' },
-    { kind: 'doc', icon: '📑', title: 'Sitzungsprotokolle 2025', meta: 'PDF · 12 Protokolle', right: 'dokumente' },
-    { kind: 'doc', icon: '📧', title: 'Mitgliederverwaltung', meta: '184 aktive Konten', right: 'mitglieder' },
-    { kind: 'photos', icon: '📸', title: 'Komplettarchiv HD', meta: 'Alle Galerien seit 2012 · 14 GB', right: 'hdfotos' },
-  ],
-};
-
-// ----- Tickets / Online-Reservierung -----
-// Standardwerte; im Admin unter „Einstellungen › Tickets" überschreibbar
-// (gespeichert als SITE_CONFIG.tickets).
-const TICKET_DEFAULTS = {
-  enabled:        true,    // Online-Reservierung überhaupt anbieten
-  showInEvents:   true,    // Reservieren-Button direkt in der Terminliste
-  ctaLabel:       'Tickets reservieren',
-  title:          'Tickets reservieren',
-  lead:           'Reserviere deine Plätze online — wir legen sie unter deinem Namen an der Abendkasse bereit.',
-  successTitle:   'Reservierung notiert!',
-  successText:    'Wir haben deine Anfrage aufgenommen und melden uns per E-Mail. Bitte hol deine Karten spätestens 15 Minuten vor Beginn an der Abendkasse ab.',
-  closedText:     'Für diesen Termin gibt es keine Online-Reservierung. Karten bekommst du an der Abendkasse oder telefonisch im Vereinslokal.',
-  openWeeks:      0,       // Reservierung startet X Wochen vor dem Termin (0 = sofort)
-  maxPerBooking:  10,      // Höchstzahl Plätze je Reservierung
-  requirePhone:   false,   // Telefonnummer als Pflichtfeld
-  notifyEmail:    '',      // Zieladresse der Reservierungsmail (leer = SITE_CONFIG.email)
-  showMailCopy:   true,    // Nach dem Absenden Link „Kopie per E-Mail senden"
-  openInNewTab:   true,    // Reservierung in eigenem Browser-Tab (#reservierung) statt im Modal
-  autoMail:       true,    // Bestätigungsmail über den Worker (/api/reservations) verschicken
-  offerPdf:       true,    // Bestätigung als PDF zum Herunterladen anbieten
-};
-
-// Zusammengeführte Ticket-Einstellungen (Standard + Admin-Überschreibungen).
-function ticketConfig() {
-  const merged = Object.assign({}, TICKET_DEFAULTS, siteConfig().tickets || {});
-  const max = parseInt(merged.maxPerBooking, 10);
-  merged.maxPerBooking = max > 0 ? max : TICKET_DEFAULTS.maxPerBooking;
-  const weeks = parseInt(merged.openWeeks, 10);
-  merged.openWeeks = weeks > 0 ? weeks : 0;
-  return merged;
-}
-
-// Kann für diesen Termin gerade online reserviert werden?
-// reason: 'open' | 'off' (global aus) | 'event-off' (Termin ohne Reservierung)
-//         | 'past' (Termin vorbei) | 'soon' (Vorlauf noch nicht erreicht)
-function ticketState(ev) {
-  const cfg = ticketConfig();
-  if (!cfg.enabled) return { open: false, reason: 'off', cfg };
-  if (!ev || !ev.tickets) return { open: false, reason: 'event-off', cfg };
-  const at = eventDate(ev);
-  if (!at) return { open: false, reason: 'event-off', cfg };
-  const today = startOfToday();
-  if (at < today) return { open: false, reason: 'past', at, cfg };
-  if (cfg.openWeeks > 0) {
-    const opensAt = new Date(at.getFullYear(), at.getMonth(), at.getDate() - cfg.openWeeks * 7);
-    if (today < opensAt) return { open: false, reason: 'soon', at, opensAt, cfg };
-  }
-  return { open: true, reason: 'open', at, cfg };
-}
-
-// Termine, für die aktuell reserviert werden kann — aufsteigend nach Datum
-function reservableEvents() {
-  return allEvents()
-    .filter(ev => ticketState(ev).open)
-    .sort((a, b) => eventDate(a) - eventDate(b));
-}
-
-// Termin über seine id finden (z. B. für die Reservierungsseite #reservierung/<id>)
-function findEvent(id) {
-  if (!id) return null;
-  return allEvents().find(ev => String(ev.id) === String(id)) || null;
-}
-
-const RESERVATIONS_KEY = 'nazumido_reservations';
-
-// Reservierungen liegen im localStorage des jeweiligen Browsers (kein Backend).
-function loadReservations() {
-  try {
-    const raw = localStorage.getItem(RESERVATIONS_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
-  } catch (e) { return []; }
-}
-
-function saveReservations(list) {
-  try { localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list)); } catch (e) {}
-  return list;
-}
-
-// Legt eine Reservierung an und gibt sie inkl. Kennung zurück
-function addReservation(entry) {
-  const res = Object.assign({
-    id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-    code: 'NZ-' + Math.random().toString(36).slice(2, 7).toUpperCase(),
-    at: new Date().toISOString(),
-  }, entry);
-  saveReservations([res, ...loadReservations()]);
-  return res;
-}
-
-// Reservierung an den Worker schicken: dort wird sie in D1 gespeichert und die
-// Bestätigungsmail verschickt (siehe src/worker.js). Ohne Worker — etwa beim
-// Öffnen der Dateien direkt im Browser — schlägt der Aufruf fehl; die Website
-// bleibt dann beim mailto-Link. Wirft nie, sondern meldet das Ergebnis zurück.
-async function submitReservation(res) {
-  if (ticketConfig().autoMail === false) return { ok: false, reason: 'off' };
-  try {
-    const resp = await fetch('/api/reservations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(res),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) return { ok: false, reason: data.error || `HTTP ${resp.status}` };
-    return Object.assign({ ok: true }, data);
-  } catch (e) {
-    return { ok: false, reason: (e && e.message) || 'Netzwerkfehler' };
-  }
 }
 
 const SITE_CONFIG = {
@@ -746,7 +481,6 @@ const SITE_CONFIG = {
   website:       'https://www.nazu-mido.at',
   websiteLabel:  'www.nazu-mido.at',
   gallery:       Object.assign({}, GALLERY_DEFAULTS),
-  tickets:       Object.assign({}, TICKET_DEFAULTS),
   topbarStrip: [
     'Session 2026 · Helau & Narri!',
     'Großer Faschingsumzug 14. Februar',
@@ -784,12 +518,8 @@ function showTopbarStrip() {
 
 Object.assign(window, {
   NEWS, EVENTS, GROUPS, PEOPLE, TAGS, SPONSORS, SPONSORS_TIERS, sponsorList,
-  RIGHTS, ROLES, roles, roleInfo, userRights, hasRight, currentUser, canDownloadHd, demoUsers,
   GARDE, MUSIKZUG, VORSITZ, PHOTOS, PHOTO_GROUPS, photoYear, photoGroups,
   GALLERY_DEFAULTS, galleryConfig, eventDate, upcomingEvents, showTopbarStrip,
   siteConfig, allEvents, startOfToday, topbarStripLeadDays,
-  MONTH_NAMES, dateLabel, eventDateLabel,
-  TICKET_DEFAULTS, ticketConfig, ticketState, reservableEvents, findEvent,
-  RESERVATIONS_KEY, loadReservations, saveReservations, addReservation, submitReservation,
-  DEMO_USERS, INTERNAL, SITE_CONFIG,
+  MONTH_NAMES, dateLabel, eventDateLabel, SITE_CONFIG,
 });

@@ -178,7 +178,7 @@ function Toggle({ label, desc, checked, onChange }) {
   );
 }
 
-// Großer Ein/Aus-Schalter (Laufschrift, Online-Reservierung)
+// Großer Ein/Aus-Schalter (Laufschrift)
 function PowerBtn({ on, onLabel, offLabel, onChange }) {
   return (
     <button className={'adm-power' + (on ? ' on' : '')}
@@ -286,18 +286,6 @@ function isUpcoming(ev) {
   return at >= new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-// Wie steht es aktuell um die Online-Reservierung dieses Termins?
-function ticketStatusText(ev) {
-  const st = window.ticketState ? window.ticketState(ev) : null;
-  const lbl = d => (window.dateLabel ? window.dateLabel(d) : '');
-  if (!st) return '';
-  if (st.reason === 'open') return '● Reservierung ist offen — Besucher:innen können Plätze buchen.';
-  if (st.reason === 'soon') return `○ Reservierung öffnet automatisch am ${lbl(st.opensAt)}.`;
-  if (st.reason === 'past') return '○ Termin ist vorbei — es kann nicht mehr reserviert werden.';
-  if (st.reason === 'off')  return '○ Online-Reservierung ist global ausgeschaltet (Einstellungen › Tickets).';
-  return '○ Für diesen Termin nicht freigeschaltet.';
-}
-
 function AdmEvents({ onSave }) {
   const [items, setItems] = useAdmSt(() => loadData('EVENTS'));
   const [open, setOpen] = useAdmSt(null);
@@ -316,7 +304,7 @@ function AdmEvents({ onSave }) {
     setItems(next); saveData('EVENTS', next); setOpen(null); onSave('Event gelöscht');
   };
   const add = () => {
-    const ev = { id: uid(), d: '01', m: 'Jan', year: String(new Date().getFullYear() + 1), day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '', tickets: false };
+    const ev = { id: uid(), d: '01', m: 'Jan', year: String(new Date().getFullYear() + 1), day: 'Montag', title: 'Neues Event', kind: '', desc: '', time: '19:00 Uhr', where: '' };
     const next = [...items, ev];
     setItems(next); setOpen(ev.id); setForm({ ...ev });
   };
@@ -355,32 +343,6 @@ function AdmEvents({ onSave }) {
                 <Txt value={form.desc} onChange={e => setForm({...form, desc: e.target.value})} />
               </Fld>
 
-              <span className="adm-section-label">Online-Reservierung</span>
-              <div className="adm-toggles" style={{ margin: '2px 0 12px' }}>
-                <Toggle label="Tickets online reservierbar"
-                  desc="Zeigt den Reservieren-Button in Terminliste und Detailfenster"
-                  checked={!!form.tickets} onChange={v => setForm({...form, tickets: v})} />
-              </div>
-              <p className="adm-card-desc" style={{ margin: '0 0 14px' }}>{ticketStatusText(form)}</p>
-              {form.tickets && (
-                <>
-                  <div className="adm-grid-2">
-                    <Fld label="Preis / Eintritt">
-                      <Inp value={form.price || ''} placeholder="28 € · Mitglieder 24 €"
-                        onChange={e => setForm({...form, price: e.target.value})} />
-                    </Fld>
-                    <Fld label="Kontingent (Plätze, optional)">
-                      <Inp type="number" min="0" value={form.seats || ''} placeholder="180"
-                        onChange={e => setForm({...form, seats: e.target.value ? Number(e.target.value) : undefined})} />
-                    </Fld>
-                  </div>
-                  <Fld label="Hinweis im Reservierungsformular (optional)">
-                    <Inp value={form.ticketNote || ''} placeholder="Tischreservierungen ab 6 Personen bitte vermerken."
-                      onChange={e => setForm({...form, ticketNote: e.target.value})} />
-                  </Fld>
-                </>
-              )}
-
               <div className="adm-actions">
                 <Btn onClick={() => save(ev.id)}>Speichern</Btn>
                 <Btn v="ghost" onClick={() => setOpen(null)}>Abbrechen</Btn>
@@ -397,7 +359,6 @@ function AdmEvents({ onSave }) {
                 <div className="t">{ev.title}</div>
                 <div className="m">
                   {ev.time} · {ev.where || 'Ort offen'}
-                  {ev.tickets ? ' · 🎫 Reservierung' : ''}
                 </div>
               </div>
               <span className="x">bearbeiten →</span>
@@ -405,193 +366,6 @@ function AdmEvents({ onSave }) {
           )}
         </div>
       ))}
-
-      <AdmReservations onSave={onSave} />
-    </div>
-  );
-}
-
-// ─── Eingegangene Reservierungen ──────────────────────────────────────────────
-// Ohne Backend liegen Reservierungen im localStorage des Browsers, in dem sie
-// abgeschickt wurden — hier sichtbar sind also die eigenen bzw. die an einem
-// gemeinsam genutzten Gerät angelegten.
-function AdmReservations({ onSave }) {
-  const [list, setList] = useAdmSt(() => (window.loadReservations ? window.loadReservations() : []));
-  const [shown, setShown] = useAdmSt(false);
-  const [pick, setPick]   = useAdmSt('alle');   // Filter: 'alle' oder eventId/-titel
-
-  const persist = (next, msg) => {
-    setList(next);
-    if (window.saveReservations) window.saveReservations(next);
-    if (msg) onSave(msg);
-  };
-  const del = id => {
-    if (!confirm('Reservierung löschen?')) return;
-    persist(list.filter(r => r.id !== id), 'Reservierung gelöscht');
-  };
-  const clear = () => {
-    if (!confirm(`Alle ${list.length} Reservierungen aus diesem Browser löschen?`)) return;
-    persist([], 'Reservierungen gelöscht');
-  };
-
-  // Nach Termin gruppieren — jüngster Termin zuerst, innerhalb alphabetisch
-  const bucketsOf = (rows) => {
-    const out = [];
-    rows.forEach(r => {
-      const key = String(r.eventId || r.eventTitle || '—');
-      let b = out.find(x => x.key === key);
-      if (!b) { out.push(b = { key, title: r.eventTitle || 'Ohne Termin', date: r.eventDate || '', iso: r.eventIso || '', rows: [] }); }
-      b.rows.push(r);
-    });
-    out.sort((a, b) => String(a.iso).localeCompare(String(b.iso)));
-    out.forEach(b => {
-      b.rows = b.rows.slice().sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''), 'de'));
-      b.seats = b.rows.reduce((a, r) => a + (parseInt(r.count, 10) || 0), 0);
-    });
-    return out;
-  };
-
-  const filtered = pick === 'alle'
-    ? list
-    : list.filter(r => String(r.eventId || r.eventTitle) === pick);
-  const buckets = bucketsOf(filtered);
-  const seats = filtered.reduce((a, r) => a + (parseInt(r.count, 10) || 0), 0);
-  // Auswahlliste der Termine, für die es Reservierungen gibt
-  const picks = bucketsOf(list).map(b => ({ key: b.key, label: `${b.title}${b.date ? ' · ' + b.date : ''} (${b.rows.length})` }));
-
-  const stamp = new Date().toISOString().slice(0, 10);
-  const fileTag = pick === 'alle' ? 'alle' : (buckets[0] ? buckets[0].title : pick)
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
-  const exportCsv = () => {
-    const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const rows = [['Code','Eingegangen','Veranstaltung','Termin','Uhrzeit','Ort','Name','E-Mail','Telefon','Plätze','Anmerkung']];
-    buckets.forEach(b => b.rows.forEach(r => rows.push(
-      [r.code, r.at, r.eventTitle, r.eventDate, r.eventTime, r.eventWhere, r.name, r.email, r.phone, r.count, r.note]
-    )));
-    const csv = '﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `reservierungen-${fileTag}-${stamp}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  };
-
-  // Druckansicht: eigener Tab mit Teilnehmerliste je Termin
-  const printList = () => {
-    const esc = v => String(v == null ? '' : v)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    const club = window.SITE_CONFIG || {};
-    const body = buckets.map(b => `
-      <section>
-        <h2>${esc(b.title)}</h2>
-        <p class="when">${esc(b.date)}${b.rows[0] && b.rows[0].eventTime ? ' · ' + esc(b.rows[0].eventTime) : ''}${b.rows[0] && b.rows[0].eventWhere ? ' · ' + esc(b.rows[0].eventWhere) : ''}</p>
-        <table>
-          <thead><tr><th>Name</th><th>Kontakt</th><th class="n">Plätze</th><th>Kennung</th><th>Anmerkung</th><th class="box">Da</th></tr></thead>
-          <tbody>
-            ${b.rows.map(r => `<tr>
-              <td><strong>${esc(r.name)}</strong></td>
-              <td>${esc(r.email)}${r.phone ? '<br>' + esc(r.phone) : ''}</td>
-              <td class="n">${esc(r.count)}</td>
-              <td class="mono">${esc(r.code)}</td>
-              <td>${esc(r.note)}</td>
-              <td class="box"></td>
-            </tr>`).join('')}
-          </tbody>
-          <tfoot><tr><td colspan="2">${b.rows.length} Reservierung${b.rows.length === 1 ? '' : 'en'}</td><td class="n">${b.seats}</td><td colspan="3"></td></tr></tfoot>
-        </table>
-      </section>`).join('');
-
-    const html = `<!doctype html><html lang="de"><head><meta charset="utf-8">
-      <title>Reservierungen ${esc(stamp)}</title>
-      <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #16140F; margin: 32px; }
-        header { border-bottom: 3px solid #C8202C; padding-bottom: 12px; margin-bottom: 26px; }
-        header h1 { font-size: 22px; margin: 0 0 4px; }
-        header p { margin: 0; font-size: 12px; color: #7C7363; letter-spacing: 0.06em; text-transform: uppercase; }
-        section { margin-bottom: 34px; page-break-inside: avoid; }
-        section h2 { font-size: 17px; margin: 0 0 2px; color: #9C1822; }
-        .when { margin: 0 0 12px; font-size: 12px; color: #7C7363; }
-        table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-        th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid rgba(22,20,15,0.15); vertical-align: top; }
-        thead th { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #7C7363; border-bottom: 1px solid #16140F; }
-        tfoot td { font-weight: 600; border-top: 1px solid #16140F; border-bottom: 0; }
-        .n { text-align: right; white-space: nowrap; }
-        .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
-        .box { width: 34px; }
-        tbody .box { border-left: 1px solid rgba(22,20,15,0.15); }
-        footer { margin-top: 30px; font-size: 11px; color: #7C7363; border-top: 1px solid rgba(22,20,15,0.15); padding-top: 10px; }
-        @media print { body { margin: 12mm; } }
-      </style></head><body>
-      <header>
-        <h1>Reservierungen — Faschingsverein Nazumido</h1>
-        <p>${esc(pick === 'alle' ? 'Alle Termine' : (buckets[0] ? buckets[0].title : ''))} · Stand ${esc(new Date().toLocaleDateString('de-AT'))} · ${filtered.length} Reservierung${filtered.length === 1 ? '' : 'en'} · ${seats} ${seats === 1 ? 'Platz' : 'Plätze'}</p>
-      </header>
-      ${body || '<p>Keine Reservierungen.</p>'}
-      <footer>${esc(club.address || '')}${club.city ? ', ' + esc(club.city) : ''} · ${esc(club.email || '')}${club.phone ? ' · ' + esc(club.phone) : ''}</footer>
-      </body></html>`;
-
-    const win = window.open('', '_blank');
-    if (!win) { alert('Der Browser hat das Druckfenster blockiert — bitte Pop-ups für diese Seite erlauben.'); return; }
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { try { win.print(); } catch (e) {} }, 250);
-  };
-
-  return (
-    <div className="adm-card" style={{ marginTop: 26 }}>
-      <div className="adm-card-title">Reservierungen ({list.length})</div>
-      <p className="adm-card-desc">
-        {list.length
-          ? `${filtered.length} Anfrage${filtered.length === 1 ? '' : 'n'} · ${seats} Plätze${pick === 'alle' ? ' insgesamt' : ' für diesen Termin'}.`
-          : 'Noch keine Reservierungen in diesem Browser.'}
-      </p>
-      <div className="adm-note">
-        Reservierungen werden im Browser der Besucher:in gespeichert und zusätzlich
-        per E-Mail an <code>{(window.ticketConfig ? window.ticketConfig().notifyEmail : '') || (window.SITE_CONFIG || {}).email}</code>
-        {' '}geschickt. Verlässlich ist der E-Mail-Eingang — diese Liste zeigt nur, was an diesem Gerät angelegt wurde.
-      </div>
-      {!!picks.length && (
-        <Fld label="Termin">
-          <Sel value={pick} onChange={e => setPick(e.target.value)}>
-            <option value="alle">Alle Termine ({list.length})</option>
-            {picks.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-          </Sel>
-        </Fld>
-      )}
-      <div className="adm-actions">
-        <Btn v="ghost" className="sm" onClick={() => setShown(s => !s)}>
-          {shown ? 'Liste einklappen' : 'Liste anzeigen'}
-        </Btn>
-        {!!filtered.length && <Btn className="sm" onClick={printList}>Liste drucken</Btn>}
-        {!!filtered.length && <Btn v="ghost" className="sm" onClick={exportCsv}>Als CSV exportieren</Btn>}
-        {!!list.length && <Btn v="danger" className="sm right" onClick={clear}>Alle löschen</Btn>}
-      </div>
-      {shown && buckets.map(b => (
-        <div key={b.key} style={{ marginTop: 16 }}>
-          <span className="adm-section-label">{b.title} · {b.date} · {b.seats} Plätze</span>
-          {b.rows.map(r => (
-            <div key={r.id} className="adm-res">
-              <div className="who">
-                <b>{r.name}</b> — {r.email}{r.phone ? ` · ${r.phone}` : ''}
-              </div>
-              <div className="seats">{r.count}</div>
-              <div className="meta">
-                {r.code} · {String(r.at || '').slice(0, 10)}
-                <button className="adm-iconbtn" style={{ marginLeft: 10 }}
-                  onClick={() => del(r.id)} aria-label="Reservierung löschen">✕</button>
-              </div>
-              {r.note && <div className="note">{r.note}</div>}
-            </div>
-          ))}
-        </div>
-      ))}
-      {shown && !buckets.length && (
-        <p className="adm-card-desc" style={{ marginTop: 14 }}>Für diesen Termin liegen keine Reservierungen vor.</p>
-      )}
     </div>
   );
 }
@@ -824,10 +598,8 @@ function AdmGallerySettings({ onSave, onChanged, collapsible = false }) {
 
       <div className="adm-card">
         <div className="adm-card-title">HD-Download</div>
-        <p className="adm-card-desc">Steuert die Freigabe der hochauflösenden Fassungen und den dunklen Abschnitt am Seitenende.</p>
+        <p className="adm-card-desc">Steuert den dunklen Abschnitt am Ende der Galerie-Seite.</p>
         <div className="adm-toggles">
-          <Toggle label="HD nur für Mitglieder" desc="Aus: jede Besucherin kann HD laden"
-            checked={g.hdMembersOnly} onChange={v => set('hdMembersOnly', v)} />
           <Toggle label="HD-Abschnitt anzeigen" desc="Dunkler Block am Ende der Galerie"
             checked={g.showHdSection} onChange={v => set('showHdSection', v)} />
         </div>
@@ -1288,337 +1060,6 @@ function AdmSponsors({ onSave }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 const REGISTRY_KEY = 'nazumido_registry';
 
-function rightCatalog() {
-  const r = window.RIGHTS;
-  return Array.isArray(r) && r.length ? r : [{ id: 'intern', label: 'Mitgliederbereich', desc: '' }];
-}
-
-// Selbst registrierte Konten liegen außerhalb des Admin-Speichers
-function loadRegistry() {
-  try {
-    const list = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '[]');
-    return Array.isArray(list) ? list : [];
-  } catch (e) { return []; }
-}
-
-function saveRegistry(list) {
-  try { localStorage.setItem(REGISTRY_KEY, JSON.stringify(list)); } catch (e) {}
-}
-
-// Rechte-Kästchen für ein Konto oder eine Rolle
-function RightsPicker({ value, onChange }) {
-  const set = (id, on) => onChange(on ? [...value, id] : value.filter(r => r !== id));
-  return (
-    <div className="adm-rights">
-      {rightCatalog().map(r => (
-        <label key={r.id} className={'adm-right' + (value.indexOf(r.id) !== -1 ? ' on' : '')}>
-          <input type="checkbox" checked={value.indexOf(r.id) !== -1}
-            onChange={e => set(r.id, e.target.checked)} />
-          <span className="box" aria-hidden>✓</span>
-          <span className="txt"><b>{r.label}</b><em>{r.desc}</em></span>
-        </label>
-      ))}
-    </div>
-  );
-}
-
-function AdmUsers({ onSave }) {
-  const [section, setSection] = useAdmSt('konten');
-  const [users, setUsers] = useAdmSt(() => loadData('DEMO_USERS'));
-  const [roleList, setRoleList] = useAdmSt(() => loadData('ROLES'));
-  const [open, setOpen] = useAdmSt(null);
-  const [form, setForm] = useAdmSt({});
-  const [reg, setReg] = useAdmSt(loadRegistry);
-  const [err, setErr] = useAdmSt('');
-
-  const roleOf = id => (roleList.find(r => r.id === id) || roleList[0] || { id: 'Mitglied', label: 'Mitglied', rights: [] });
-  const rightsOf = u => Array.isArray(u.rights) ? u.rights : (roleOf(u.role).rights || []);
-
-  // ---- Konten ----
-  const edit = (u, i) => { setErr(''); setOpen(i); setForm({ ...u }); };
-  const saveUser = i => {
-    const mail = String(form.email || '').trim().toLowerCase();
-    if (!mail || !form.name) { setErr('Name und E-Mail sind Pflicht.'); return; }
-    if (users.some((u, j) => j !== i && String(u.email).toLowerCase() === mail)) {
-      setErr('Diese E-Mail ist schon vergeben.'); return;
-    }
-    if (!form.password) { setErr('Bitte ein Passwort vergeben.'); return; }
-    const clean = { ...form, email: mail, avatar: (form.avatar || form.name.charAt(0)).toUpperCase().slice(0, 2) };
-    if (!Array.isArray(clean.rights)) delete clean.rights;
-    if (!clean.group) delete clean.group;
-    const next = users.map((u, j) => j === i ? clean : u);
-    setUsers(next); saveData('DEMO_USERS', next); setOpen(null); setErr(''); onSave('Konto gespeichert');
-  };
-  const delUser = i => {
-    if (!confirm('Konto wirklich löschen?')) return;
-    const next = users.filter((_, j) => j !== i);
-    setUsers(next); saveData('DEMO_USERS', next); setOpen(null); onSave('Konto gelöscht');
-  };
-  const addUser = () => {
-    const u = { email: '', password: '', name: 'Neues Konto', role: (roleList[0] || {}).id || 'Mitglied', group: '', avatar: 'N' };
-    const next = [...users, u];
-    setUsers(next); edit(u, next.length - 1);
-  };
-
-  // ---- Rollen ----
-  const updRole = (i, k, v) => setRoleList(roleList.map((r, j) => j === i ? { ...r, [k]: v } : r));
-  const saveRoles = () => {
-    saveData('ROLES', roleList);
-    onSave('Rollen gespeichert');
-  };
-  const addRole = () => setRoleList([...roleList, {
-    id: 'Rolle' + (roleList.length + 1), label: 'Neue Rolle', color: 'green',
-    desc: '', rights: ['intern'], signup: false,
-  }]);
-  const delRole = i => {
-    const r = roleList[i];
-    if (users.some(u => u.role === r.id)) { alert('Diese Rolle ist noch Konten zugewiesen — bitte zuerst umstellen.'); return; }
-    if (!confirm(`Rolle „${r.label}" löschen?`)) return;
-    const next = roleList.filter((_, j) => j !== i);
-    setRoleList(next); saveData('ROLES', next); onSave('Rolle gelöscht');
-  };
-
-  // ---- Registrierungen ----
-  const updReg = (i, k, v) => {
-    const next = reg.map((u, j) => j === i ? { ...u, [k]: v } : u);
-    setReg(next); saveRegistry(next);
-  };
-  const delReg = i => {
-    if (!confirm('Registrierung löschen?')) return;
-    const next = reg.filter((_, j) => j !== i);
-    setReg(next); saveRegistry(next); onSave('Registrierung gelöscht');
-  };
-  const approve = i => {
-    const u = reg[i];
-    updReg(i, 'role', u.requestedRole);
-    const next = reg.map((x, j) => j === i ? { ...x, role: u.requestedRole, requestedRole: undefined } : x);
-    setReg(next); saveRegistry(next); onSave('Rolle freigeschaltet');
-  };
-
-  return (
-    <div>
-      <div className="adm-chips">
-        {[['konten','👤 Konten'],['rollen','🔑 Rollen & Rechte'],['registriert','📝 Registrierungen']].map(([id, label]) => (
-          <Chip key={id} active={section === id} onClick={() => setSection(id)}>{label}</Chip>
-        ))}
-      </div>
-
-      {section === 'konten' && (
-        <div>
-          <PanelHead
-            title={`${users.length} Konten`}
-            desc="Vordefinierte Logins für den Mitgliederbereich. Die Rolle bestimmt die Rechte — pro Konto lässt sie sich überschreiben."
-            action={<Btn onClick={addUser}>+ Konto anlegen</Btn>}
-          />
-          <div className="adm-note">
-            Konten liegen wie alle Inhalte im Browserspeicher — sie gelten für dieses
-            Gerät. Das Passwort ist im Klartext gespeichert, also bitte keine echten
-            Passwörter verwenden.
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
-            {users.map((u, i) => (
-              <div key={i} className={'adm-card' + (open === i ? ' open' : '') + ' accent-' + (roleOf(u.role).color === 'ink' ? 'red' : (roleOf(u.role).color || 'green'))} style={{ marginBottom: 0 }}>
-                {open === i ? (
-                  <div>
-                    <div className="adm-grid-2">
-                      <Fld label="Name"><Inp value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} /></Fld>
-                      <Fld label="Kürzel"><Inp value={form.avatar || ''} maxLength={2} onChange={e => setForm({...form, avatar: e.target.value})} /></Fld>
-                      <Fld label="E-Mail"><Inp value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} placeholder="name@nazumido.at" /></Fld>
-                      <Fld label="Passwort"><Inp value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})} /></Fld>
-                      <Fld label="Rolle">
-                        <Sel value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
-                          {roleList.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                        </Sel>
-                      </Fld>
-                      <Fld label="Gruppe (optional)">
-                        <Sel value={form.group || ''} onChange={e => setForm({...form, group: e.target.value})}>
-                          <option value="">—</option>
-                          <option>Präsidium</option><option>Garde</option><option>Musikzug</option>
-                        </Sel>
-                      </Fld>
-                    </div>
-                    <Toggle
-                      label="Rechte individuell setzen"
-                      desc="Aus: das Konto erbt die Rechte seiner Rolle."
-                      checked={Array.isArray(form.rights)}
-                      onChange={on => setForm({...form, rights: on ? (roleOf(form.role).rights || []).slice() : undefined})}
-                    />
-                    {Array.isArray(form.rights)
-                      ? <RightsPicker value={form.rights} onChange={v => setForm({...form, rights: v})} />
-                      : (
-                        <p className="adm-hint" style={{ marginTop: 8 }}>
-                          Erbt {(roleOf(form.role).rights || []).length} Rechte von „{roleOf(form.role).label}".
-                        </p>
-                      )}
-                    {err && <p className="adm-err">{err}</p>}
-                    <div className="adm-actions">
-                      <Btn className="sm" onClick={() => saveUser(i)}>Speichern</Btn>
-                      <Btn v="ghost" className="sm" onClick={() => { setOpen(null); setErr(''); }}>Abbrechen</Btn>
-                      <Btn v="danger" className="sm right" onClick={() => delUser(i)}>Löschen</Btn>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="adm-row" style={{ marginBottom: 12, cursor: 'default' }}>
-                      <div className={'adm-avatar ' + (roleOf(u.role).color === 'ink' ? 'red' : (roleOf(u.role).color || 'green'))}>
-                        <span className="dot"></span>{u.avatar}
-                      </div>
-                      <div className="grow">
-                        <div className="t">{u.name}</div>
-                        <div className="m">{roleOf(u.role).label}{u.group ? ` · ${u.group}` : ''}</div>
-                      </div>
-                    </div>
-                    <div className="adm-kv">
-                      <span>E-Mail</span><b>{u.email || '—'}</b>
-                      <span>Passwort</span><b>{u.password || '—'}</b>
-                      <span>Rechte</span>
-                      <b>{rightsOf(u).length} {Array.isArray(u.rights) ? '(individuell)' : '(aus Rolle)'}</b>
-                    </div>
-                    <Btn v="ghost" className="sm block" onClick={() => edit(u, i)}>Bearbeiten</Btn>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {section === 'rollen' && (
-        <div>
-          <PanelHead
-            title={`${roleList.length} Rollen`}
-            desc="Jede Rolle bündelt Rechte. Änderungen wirken auf alle Konten, die die Rechte von der Rolle erben."
-            action={<Btn onClick={saveRoles}>Rollen speichern</Btn>}
-          />
-          {roleList.map((r, i) => (
-            <div key={i} className={'adm-card accent-' + (r.color === 'ink' ? 'red' : (r.color || 'green'))}>
-              <div className="adm-grid-3">
-                <Fld label="Bezeichnung"><Inp value={r.label} onChange={e => updRole(i, 'label', e.target.value)} /></Fld>
-                <Fld label="Farbe">
-                  <Sel value={r.color} onChange={e => updRole(i, 'color', e.target.value)}>
-                    <option value="green">Grün</option><option value="gold">Gold</option>
-                    <option value="red">Rot</option><option value="ink">Schwarz</option>
-                  </Sel>
-                </Fld>
-                <Fld label={`Konten mit dieser Rolle`}>
-                  <Inp value={users.filter(u => u.role === r.id).length} readOnly />
-                </Fld>
-              </div>
-              <Fld label="Beschreibung (steht im Mitgliederbereich)">
-                <Inp value={r.desc || ''} onChange={e => updRole(i, 'desc', e.target.value)} />
-              </Fld>
-              <Toggle
-                label="Bei der Registrierung wählbar"
-                desc="Aus: Besucher:innen können die Rolle nur beantragen, sie wird hier freigeschaltet."
-                checked={r.signup !== false}
-                onChange={on => updRole(i, 'signup', on)}
-              />
-              <div className="adm-section-label">Rechte</div>
-              <RightsPicker value={r.rights || []} onChange={v => updRole(i, 'rights', v)} />
-              <div className="adm-actions">
-                <Btn className="sm" onClick={saveRoles}>Speichern</Btn>
-                <Btn v="danger" className="sm right" onClick={() => delRole(i)}>Rolle löschen</Btn>
-              </div>
-            </div>
-          ))}
-          <div className="adm-actions">
-            <Btn v="ghost" onClick={addRole}>+ Rolle hinzufügen</Btn>
-            <Btn onClick={saveRoles}>Rollen speichern</Btn>
-          </div>
-        </div>
-      )}
-
-      {section === 'registriert' && (
-        <div>
-          <PanelHead
-            title={`${reg.length} Selbstregistrierungen`}
-            desc="Konten, die sich über das Login-Formular angemeldet haben. Beantragte Rollen werden hier freigeschaltet."
-          />
-          {!reg.length && (
-            <div className="adm-note">In diesem Browser hat sich noch niemand selbst registriert.</div>
-          )}
-          {reg.map((u, i) => (
-            <div key={i} className="adm-card">
-              <div className="adm-grid-3">
-                <Fld label="Name"><Inp value={u.name || ''} readOnly /></Fld>
-                <Fld label="E-Mail"><Inp value={u.email || ''} readOnly /></Fld>
-                <Fld label="Rolle">
-                  <Sel value={u.role} onChange={e => updReg(i, 'role', e.target.value)}>
-                    {roleList.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                  </Sel>
-                </Fld>
-              </div>
-              <div className="adm-actions">
-                {u.requestedRole && (
-                  <Btn className="sm" onClick={() => approve(i)}>
-                    Als „{roleOf(u.requestedRole).label}" freischalten
-                  </Btn>
-                )}
-                <Btn v="danger" className="sm right" onClick={() => delReg(i)}>Löschen</Btn>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MITGLIEDER-INHALTE
-// ═══════════════════════════════════════════════════════════════════════════════
-function AdmInternal({ onSave }) {
-  const [data, setData] = useAdmSt(() => loadData('INTERNAL'));
-  const [role, setRole] = useAdmSt('Mitglied');
-
-  const rows = () => data[role] || [];
-  const upd = (i, k, v) => setData({...data, [role]: rows().map((d, j) => j === i ? {...d, [k]: v} : d)});
-  const del = i => { if (!confirm('Entfernen?')) return; setData({...data, [role]: rows().filter((_, j) => j !== i)}); };
-  const add = () => setData({...data, [role]: [...rows(), { kind: 'doc', icon: '📄', title: 'Neues Dokument', meta: '' }]});
-  const save = () => { saveData('INTERNAL', data); onSave('Mitglieder-Bereich gespeichert'); };
-
-  const roleList = (window.ROLES || []).length ? window.ROLES : [{ id: 'Mitglied', label: 'Mitglied' }];
-
-  return (
-    <div>
-      <div className="adm-note">
-        Jede Rolle sieht im Mitglieder-Dashboard nur ihre eigenen Inhalte.
-        Einträge mit <code>Galerie</code> verlinken auf die Fotogalerie, <code>Verwaltung</code>
-        auf das Admin-Panel. Die Spalte <code>Recht</code> blendet einen Eintrag
-        aus, wenn dem Konto das Recht fehlt.
-      </div>
-      <div className="adm-chips">
-        {roleList.map(r => (
-          <Chip key={r.id} active={role === r.id} onClick={() => setRole(r.id)}>{r.label}</Chip>
-        ))}
-      </div>
-      {!rows().length && (
-        <div className="adm-note">Für diese Rolle sind noch keine Inhalte hinterlegt.</div>
-      )}
-      {rows().map((doc, i) => (
-        <div key={i} className="adm-card" style={{ display: 'grid', gridTemplateColumns: '54px 1.4fr 1.4fr 110px 130px 40px', gap: 10, alignItems: 'center' }}>
-          <Inp value={doc.icon} onChange={e => upd(i, 'icon', e.target.value)} style={{ textAlign: 'center', fontSize: 18 }} />
-          <Inp value={doc.title} onChange={e => upd(i, 'title', e.target.value)} />
-          <Inp value={doc.meta} onChange={e => upd(i, 'meta', e.target.value)} placeholder="Meta (Typ, Größe…)" />
-          <Sel value={doc.kind} onChange={e => upd(i, 'kind', e.target.value)}>
-            <option value="doc">Dokument</option><option value="photos">Galerie</option>
-            <option value="admin">Verwaltung</option>
-          </Sel>
-          <Sel value={doc.right || ''} onChange={e => upd(i, 'right', e.target.value || undefined)}>
-            <option value="">Recht: keins</option>
-            {rightCatalog().map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </Sel>
-          <button className="adm-iconbtn" onClick={() => del(i)} aria-label="Eintrag entfernen">✕</button>
-        </div>
-      ))}
-      <div className="adm-actions">
-        <Btn v="ghost" onClick={add}>+ Dokument hinzufügen</Btn>
-        <Btn onClick={save}>Speichern</Btn>
-      </div>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // VEREINSINFO
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1738,154 +1179,6 @@ function AdmInfo({ onSave }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TICKET-EINSTELLUNGEN — Online-Reservierung für Veranstaltungen
-// ═══════════════════════════════════════════════════════════════════════════════
-function ticketCfg() {
-  return typeof ticketConfig === 'function'
-    ? ticketConfig()
-    : Object.assign({}, window.TICKET_DEFAULTS, (window.SITE_CONFIG || {}).tickets);
-}
-
-function AdmTicketSettings({ onSave }) {
-  const [cfg, setCfg] = useAdmSt(() => loadData('SITE_CONFIG'));
-  const [t, setT]     = useAdmSt(() => ticketCfg());
-
-  const set = (k, v) => setT({ ...t, [k]: v });
-  const txt = k => ({ value: t[k] || '', onChange: e => set(k, e.target.value) });
-  const events = (loadData('EVENTS') || []).filter(e => e.tickets);
-
-  const save = () => {
-    const max = parseInt(t.maxPerBooking, 10);
-    const weeks = parseInt(t.openWeeks, 10);
-    const next = {
-      ...cfg,
-      tickets: {
-        ...t,
-        maxPerBooking: max > 0 ? max : (window.TICKET_DEFAULTS || {}).maxPerBooking || 10,
-        openWeeks: weeks > 0 ? weeks : 0,
-      },
-    };
-    setCfg(next); setT(next.tickets);
-    saveData('SITE_CONFIG', next);
-    onSave('Ticket-Einstellungen gespeichert');
-  };
-
-  const reset = () => {
-    if (!confirm('Ticket-Einstellungen auf Standard zurücksetzen?')) return;
-    const defaults = { ...(window.TICKET_DEFAULTS || {}) };
-    const next = { ...cfg, tickets: defaults };
-    setCfg(next); setT(defaults);
-    saveData('SITE_CONFIG', next);
-    onSave('Ticket-Einstellungen zurückgesetzt');
-  };
-
-  return (
-    <div>
-      <div className="adm-card">
-        <div className="adm-card-title">Online-Reservierung</div>
-        <p className="adm-card-desc">
-          Hauptschalter für die Ticket-Reservierung. Welche Termine reservierbar
-          sind, stellst du beim jeweiligen Event unter <strong>Events</strong> ein.
-        </p>
-        <div className="adm-powerrow">
-          <PowerBtn on={t.enabled !== false}
-            onLabel="Reservierung ist eingeschaltet" offLabel="Reservierung ist ausgeschaltet"
-            onChange={v => set('enabled', v)} />
-          <span className="state">
-            {t.enabled === false
-              ? 'Auf der Website erscheinen keine Reservieren-Buttons.'
-              : (events.length
-                  ? `${events.length} Termin${events.length === 1 ? '' : 'e'} mit Reservierung: ${events.map(e => e.title).join(', ')}.`
-                  : 'Noch kein Termin für die Reservierung freigeschaltet — im Tab „Events" aktivieren.')}
-          </span>
-        </div>
-        <div className="adm-toggles">
-          <Toggle label="Button in der Terminliste" desc="Reservieren direkt aus der Event-Liste heraus"
-            checked={t.showInEvents !== false} onChange={v => set('showInEvents', v)} />
-          <Toggle label="Eigener Tab für die Reservierung" desc="Aus: Reservierung öffnet im Fenster über dem Termin"
-            checked={t.openInNewTab !== false} onChange={v => set('openInNewTab', v)} />
-          <Toggle label="Telefonnummer verpflichtend" desc="Aus: Telefon ist optional"
-            checked={!!t.requirePhone} onChange={v => set('requirePhone', v)} />
-          <Toggle label="E-Mail-Kopie anbieten" desc="Link „Reservierung per E-Mail senden“ nach dem Absenden"
-            checked={t.showMailCopy !== false} onChange={v => set('showMailCopy', v)} />
-        </div>
-      </div>
-
-      <div className="adm-card">
-        <div className="adm-card-title">Bestätigung</div>
-        <p className="adm-card-desc">
-          Was die Besucher:in nach dem Absenden bekommt: eine automatische
-          Bestätigungsmail und die Bestätigung als PDF zum Herunterladen.
-        </p>
-        <div className="adm-toggles">
-          <Toggle label="Bestätigungsmail automatisch senden"
-            desc="Server verschickt Bestätigung an die Besucher:in und eine Kopie an den Verein"
-            checked={t.autoMail !== false} onChange={v => set('autoMail', v)} />
-          <Toggle label="Bestätigung als PDF anbieten"
-            desc="Download-Button mit der fertigen Bestätigung"
-            checked={t.offerPdf !== false} onChange={v => set('offerPdf', v)} />
-        </div>
-        <div className="adm-note">
-          Der Mailversand läuft über den Cloudflare-Worker (<code>/api/reservations</code>)
-          und braucht einmalig einen Mailanbieter: Schlüssel als Secret setzen
-          (<code>RESEND_API_KEY</code>, <code>BREVO_API_KEY</code> oder <code>MAILGUN_API_KEY</code>)
-          sowie <code>MAIL_FROM</code> und <code>CLUB_EMAIL</code> eintragen — Details in
-          DEPLOY-CLOUDFLARE.md. Solange das fehlt, wird die Reservierung nur gespeichert und
-          die Besucher:in bekommt wie bisher den mailto-Link angeboten.
-        </div>
-      </div>
-
-      <div className="adm-card">
-        <div className="adm-card-title">Zeitraum & Umfang</div>
-        <p className="adm-card-desc">
-          Trag alle Termine ein — die Reservierung öffnet dann von selbst die
-          eingestellte Zahl an Wochen vor dem jeweiligen Termin und schließt am Eventtag.
-        </p>
-        <div className="adm-grid-3">
-          <Fld label="Reservierung öffnet … Wochen vorher (0 = sofort)">
-            <Inp type="number" min="0" value={t.openWeeks ?? 0}
-              onChange={e => set('openWeeks', e.target.value)} />
-          </Fld>
-          <Fld label="Plätze je Reservierung (max.)">
-            <Inp type="number" min="1" value={t.maxPerBooking ?? 10}
-              onChange={e => set('maxPerBooking', e.target.value)} />
-          </Fld>
-          <Fld label="Reservierungen an (E-Mail)">
-            <Inp {...txt('notifyEmail')} placeholder={(window.SITE_CONFIG || {}).email || 'Nazu.Mido@gmx.at'} />
-          </Fld>
-        </div>
-        <div className="adm-note">
-          {parseInt(t.openWeeks, 10) > 0
-            ? `Beispiel: Ein Termin am 14. Februar ist ab ${parseInt(t.openWeeks, 10)} Woche${parseInt(t.openWeeks, 10) === 1 ? '' : 'n'} davor reservierbar.`
-            : 'Alle freigeschalteten Termine sind sofort reservierbar.'}
-          {' '}Leere E-Mail bedeutet: Reservierungen gehen an die Vereinsadresse aus der Vereinsinfo.
-        </div>
-      </div>
-
-      <div className="adm-card">
-        <div className="adm-card-title">Texte</div>
-        <p className="adm-card-desc">Beschriftung und Texte im Reservierungsfenster.</p>
-        <div className="adm-grid-2">
-          <Fld label="Button-Text"><Inp {...txt('ctaLabel')} placeholder="Tickets reservieren" /></Fld>
-          <Fld label="Überschrift im Formular"><Inp {...txt('title')} placeholder="Tickets reservieren" /></Fld>
-        </div>
-        <Fld label="Einleitungstext"><Txt {...txt('lead')} /></Fld>
-        <div className="adm-grid-2">
-          <Fld label="Überschrift nach dem Absenden"><Inp {...txt('successTitle')} placeholder="Reservierung notiert!" /></Fld>
-          <Fld label="Text „keine Reservierung möglich“"><Inp {...txt('closedText')} /></Fld>
-        </div>
-        <Fld label="Bestätigungstext"><Txt {...txt('successText')} /></Fld>
-      </div>
-
-      <div className="adm-actions">
-        <Btn onClick={save}>Ticket-Einstellungen speichern</Btn>
-        <Btn v="ghost" className="right" onClick={reset}>Auf Standard zurücksetzen</Btn>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // EINSTELLUNGEN
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdmSettings({ onSave }) {
@@ -1905,7 +1198,7 @@ function AdmSettings({ onSave }) {
 
   const resetAll = () => {
     if (!confirm('Wirklich alle Änderungen zurücksetzen? Die Seite wird danach neu geladen.')) return;
-    ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','INTERNAL','SITE_CONFIG','ROLES','DEMO_USERS']
+    ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','SITE_CONFIG']
       .forEach(k => localStorage.removeItem(PFX + k));
     onSave('Zurückgesetzt — lädt neu…');
     setTimeout(() => window.location.reload(), 1200);
@@ -1914,14 +1207,12 @@ function AdmSettings({ onSave }) {
   return (
     <div>
       <div className="adm-chips">
-        {[['galerie','📸 Galerie'],['tickets','🎫 Tickets'],['zugang','🔑 Zugang'],['daten','♻️ Daten']].map(([id, label]) => (
+        {[['galerie','📸 Galerie'],['zugang','🔑 Zugang'],['daten','♻️ Daten']].map(([id, label]) => (
           <Chip key={id} active={section === id} onClick={() => setSection(id)}>{label}</Chip>
         ))}
       </div>
 
       {section === 'galerie' && <AdmGallerySettings onSave={onSave} />}
-
-      {section === 'tickets' && <AdmTicketSettings onSave={onSave} />}
 
       {section === 'zugang' && (
       <div className="adm-card">
@@ -1944,8 +1235,7 @@ function AdmSettings({ onSave }) {
         <p className="adm-card-desc">
           Setzt sämtliche im Admin gespeicherten Anpassungen auf den originalen
           Datenstand der Website zurück — inklusive Galerie, Galerie-Einstellungen,
-          hochgeladener Logos und Fotos sowie Benutzerkonten und Rollen.
-          Selbstregistrierungen bleiben erhalten.
+          hochgeladener Logos und Fotos.
         </p>
         <Btn v="danger" onClick={resetAll}>Auf Standardwerte zurücksetzen</Btn>
       </div>
@@ -1965,9 +1255,7 @@ const ADM_TABS = [
   { id: 'people',   icon: '👥', label: 'Personen',    title: 'Personen',        desc: 'Präsidium, Trainer:innen und Funktionär:innen der Saison.' },
   { id: 'gruppen',  icon: '🏆', label: 'Gruppen',     title: 'Gruppen',         desc: 'Detailseiten von Garde, Musikzug und Präsidium.' },
   { id: 'sponsors', icon: '💼', label: 'Sponsoren',   title: 'Sponsoren',       desc: 'Partner und Förderer in drei Stufen — mit Logo.' },
-  { id: 'users',    icon: '👤', label: 'Benutzer',    title: 'Benutzer',        desc: 'Konten für den Mitgliederbereich, Rollen und ihre Rechte.' },
-  { id: 'internal', icon: '🔒', label: 'Intern',      title: 'Mitglieder-Inhalte', desc: 'Dokumente und Links im internen Bereich — je Rolle.' },
-  { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie, Ticket-Reservierung, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
+  { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
 ];
 
 function AdminPage({ navigate }) {
@@ -2041,8 +1329,6 @@ function AdminPage({ navigate }) {
             {active.id === 'people'   && <AdmPeople   onSave={setToast} />}
             {active.id === 'gruppen'  && <AdmGruppen  onSave={setToast} />}
             {active.id === 'sponsors' && <AdmSponsors onSave={setToast} />}
-            {active.id === 'users'    && <AdmUsers    onSave={setToast} />}
-            {active.id === 'internal' && <AdmInternal onSave={setToast} />}
             {active.id === 'settings' && <AdmSettings onSave={setToast} />}
           </div>
         </div>

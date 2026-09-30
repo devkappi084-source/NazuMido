@@ -49,14 +49,13 @@ function accentTitle(text, color) {
 // ---------- Photo Card (shared) ----------
 function PhotoCard({ photo, onOpen }) {
   const g = galleryConfig();
-  const hdOpen = canDownloadHd();
   return (
     <div className="photo-card" onClick={() => onOpen(photo)}>
       {photo.src ? <img src={photo.src} alt={photo.title} /> : <div className="ph">Foto · {photo.title}</div>}
       {g.showAlbumBadge && photo.album && <span className="album-badge">{photo.album}</span>}
-      <span className={"hd-badge " + (hdOpen ? '' : 'locked')}>
+      <span className="hd-badge">
         <span className="dot"></span>
-        {hdOpen ? 'HD verfügbar' : '🔒 HD'}
+        HD verfügbar
       </span>
       <div className="photo-card-info">
         <div className="t">{photo.title}</div>
@@ -81,9 +80,7 @@ function GroupPhotos({ group, onOpen, navigate }) {
             <h2 style={{ marginTop: 14, fontSize: 'clamp(36px, 4.4vw, 64px)' }}>Aus unserer <span className="italic" style={{color:'var(--red)'}}>Linse</span></h2>
           </div>
           <p className="lead">
-            {g.hdMembersOnly
-              ? 'Klick ein Foto an: Mitglieder können die HD-Version herunterladen, Gäste bekommen die Web-Vorschau.'
-              : 'Klick ein Foto an — jede Aufnahme steht in voller Auflösung zum Download bereit.'}
+            Klick ein Foto an — jede Aufnahme steht in voller Auflösung zum Download bereit.
           </p>
         </div>
         <div className="photo-grid">
@@ -236,11 +233,6 @@ function GaleriePage({ navigate, onOpenPhoto }) {
               {g.hdText}
             </p>
             <div style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {currentUser() ? (
-                <button className="btn" onClick={() => navigate('mitglieder')}>Zum Mitgliederbereich</button>
-              ) : g.hdMembersOnly ? (
-                <button className="btn" onClick={() => navigate('login')}>Mitglieder-Login</button>
-              ) : null}
               <button className="btn ghost" onClick={() => navigate('home')}>Zurück zur Startseite</button>
             </div>
           </div>
@@ -552,95 +544,6 @@ function VorsitzPage({ navigate, onOpenPhoto }) {
 }
 
 // ---------- Sponsors Page ----------
-// ---------- Reservierungsseite (#reservierung/<event-id>) ----------
-// Wird in einem eigenen Tab geöffnet, sofern „Eigener Tab" in den
-// Ticket-Einstellungen aktiv ist. Die Reservierung landet in derselben Liste
-// (localStorage) wie im Modal — der Admin exportiert bzw. druckt sie von dort.
-function ReservationPage({ eventId, navigate }) {
-  const cfg = ticketConfig();
-  const event = eventId ? findEvent(eventId) : null;
-  const st = event ? ticketState(event) : null;
-  const open = !!(st && st.open);
-  const options = reservableEvents();
-
-  const facts = event
-    ? [
-        { label: 'Termin', value: eventDateLabel(event) },
-        { label: 'Beginn', value: event.time || '—' },
-        { label: 'Ort', value: event.where || '—' },
-        { label: 'Preis', value: event.price || 'Freier Eintritt' },
-      ]
-    : [
-        { label: 'Termine offen', value: String(options.length) },
-        { label: 'Plätze je Buchung', value: `max. ${cfg.maxPerBooking}` },
-        { label: 'Bestätigung', value: 'per E-Mail' },
-      ];
-
-  // Warum ist gerade nicht reservierbar?
-  const closedText = !event
-    ? 'Dieser Termin ist nicht (mehr) im Kalender.'
-    : st.reason === 'past'
-    ? 'Dieser Termin ist bereits vorbei.'
-    : st.reason === 'soon'
-    ? `Die Reservierung öffnet am ${dateLabel(st.opensAt)}.`
-    : cfg.closedText;
-
-  return (
-    <>
-      <SubHero
-        kicker="Online-Reservierung"
-        title={event ? accentTitle(event.title, 'var(--gold)') : accentTitle('Tickets reservieren', 'var(--gold)')}
-        tagline={cfg.lead}
-        facts={facts}
-        breadcrumb="Reservierung"
-        navigate={navigate}
-      />
-      <section className="block">
-        <div className="container">
-          <div className="reservation-panel">
-            {event && open ? (
-              <TicketForm
-                event={event}
-                standalone
-                backLabel="← Zurück zur Startseite"
-                onBack={() => navigate('home')}
-              />
-            ) : (
-              <div className="ticket-form">
-                <button type="button" className="ticket-back" onClick={() => navigate('home')}>
-                  ← Zurück zur Startseite
-                </button>
-                <h3>{event ? event.title : 'Termin wählen'}</h3>
-                <div className="ticket-hint">
-                  <strong>🎫 Keine Reservierung möglich</strong>
-                  <span>{closedText}</span>
-                </div>
-                {!!options.length && (
-                  <>
-                    <p className="ticket-lead" style={{ marginTop: 22 }}>
-                      {event ? 'Für diese Termine kannst du stattdessen reservieren:' : 'Für diese Termine ist die Reservierung offen:'}
-                    </p>
-                    <ul className="reservation-picks">
-                      {options.map(ev => (
-                        <li key={ev.id}>
-                          <a href={`#reservierung/${ev.id}`} onClick={e => { e.preventDefault(); navigate(`reservierung/${ev.id}`); }}>
-                            <strong>{ev.title}</strong>
-                            <span>{eventDateLabel(ev)}{ev.time ? ` · ${ev.time}` : ''}{ev.where ? ` · ${ev.where}` : ''}</span>
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-    </>
-  );
-}
-
 function SponsorsPage({ navigate }) {
   const tiers = window.SPONSORS_TIERS || SPONSORS_TIERS;
   const totalCount = tiers.reduce((acc, t) => acc + t.sponsors.length, 0);
@@ -727,5 +630,5 @@ function SponsorsPage({ navigate }) {
 
 Object.assign(window, {
   SubHero, PhotoCard, GroupPhotos, GaleriePage, accentTitle,
-  GardePage, MusikzugPage, VorsitzPage, SponsorsPage, ReservationPage,
+  GardePage, MusikzugPage, VorsitzPage, SponsorsPage,
 });

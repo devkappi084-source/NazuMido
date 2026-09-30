@@ -1,6 +1,6 @@
 // Apply any admin overrides saved in localStorage before first render
 (function applyAdminOverrides() {
-  const keys = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','INTERNAL','SITE_CONFIG','ROLES','DEMO_USERS'];
+  const keys = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SITE_CONFIG'];
   keys.forEach(k => {
     try {
       const raw = localStorage.getItem('nzadm_' + k);
@@ -18,7 +18,6 @@ const { useState: useStateApp, useEffect: useEffectApp } = React;
 const ANCHOR_IDS = ['events', 'news', 'groups', 'people', 'kontakt'];
 
 function App() {
-  const auth = useAuth();
   const [route, setRouteRaw] = useStateApp(() => {
     const hash = (window.location.hash || '').replace(/^#\/?/, '');
     return hash || 'home';
@@ -26,8 +25,6 @@ function App() {
   const [modal, setModal] = useStateApp(null);
 
   const navigate = (id) => {
-    // No pre-guard: the render branch handles unauthenticated 'mitglieder' by showing LoginPage.
-    // (Pre-guarding here breaks login-then-redirect because setUser hasn't flushed yet.)
     setRouteRaw(id);
     window.location.hash = id;
     setTimeout(() => window.scrollTo({ top: 0 }), 0);
@@ -43,12 +40,7 @@ function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  // Expose current user on window for shared photo card component
-  useEffectApp(() => { window.__currentUser = auth.user; }, [auth.user]);
-
-  // Routen können einen Parameter tragen: „reservierung/e2" → routeName + routeParam
   const rawName    = route.split('/')[0];
-  const routeParam = route.split('/')[1] || '';
   // Anker der Startseite (auch als Direktlink #kontakt) zeigen die Startseite
   const routeName  = ANCHOR_IDS.includes(rawName) ? 'home' : rawName;
 
@@ -91,12 +83,7 @@ function App() {
 
   return (
     <>
-      <TopBar
-        route={routeName}
-        navigate={handleNav}
-        user={auth.user}
-        onLogout={auth.logout}
-      />
+      <TopBar route={routeName} navigate={handleNav} />
 
       {routeName === 'home' && (
         <main>
@@ -109,10 +96,6 @@ function App() {
           <PeopleBlock />
           <ContactBlock />
         </main>
-      )}
-
-      {routeName === 'reservierung' && (
-        <main><ReservationPage eventId={routeParam} navigate={handleNav} /></main>
       )}
 
       {routeName === 'garde' && (
@@ -130,18 +113,8 @@ function App() {
       {routeName === 'sponsoren' && (
         <main><SponsorsPage navigate={handleNav} /></main>
       )}
-      {routeName === 'login' && (
-        <main><LoginPage auth={auth} navigate={handleNav} /></main>
-      )}
-      {routeName === 'mitglieder' && auth.user && (
-        <main><MemberDashboard user={auth.user} auth={auth} navigate={handleNav} onOpenPhoto={setModal} /></main>
-      )}
-      {routeName === 'mitglieder' && !auth.user && (
-        <main><LoginPage auth={auth} navigate={handleNav} /></main>
-      )}
-
       <Footer navigate={handleNav} />
-      <Modal item={modal} onClose={() => setModal(null)} user={auth.user} />
+      <Modal item={modal} onClose={() => setModal(null)} />
     </>
   );
 }
