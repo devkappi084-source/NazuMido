@@ -704,6 +704,42 @@ app.get('/uploads/:key{.+}', async (c) => {
 });
 
 // ===========================================================================
+// Coming-Soon-Modus: Mit COMING_SOON = "true" (wrangler.toml) bekommen
+// Besucher statt der Startseite public/coming-soon.html. Damit der Worker die
+// Startseite überhaupt sieht, stehen ihre Pfade in [assets].run_worker_first.
+// Das Team öffnet einmal /?vorschau (bzw. /?vorschau=<PREVIEW_KEY>, falls
+// gesetzt) und sieht danach per Cookie die echte Seite; /?vorschau=aus beendet
+// die Vorschau wieder.
+// ===========================================================================
+const ENTRY_PAGES = new Set(['/', '/index.html', '/Nazumido.html']);
+const PREVIEW_COOKIE = 'nz_vorschau';
+
+app.get('*', async (c, next) => {
+  const url = new URL(c.req.url);
+  if (!ENTRY_PAGES.has(url.pathname) || c.env.COMING_SOON !== 'true') return next();
+
+  const preview = url.searchParams.get('vorschau');
+  if (preview !== null) {
+    const off = preview === 'aus';
+    if (!off && c.env.PREVIEW_KEY && preview !== c.env.PREVIEW_KEY) {
+      return c.redirect('/', 302);
+    }
+    const cookie = off
+      ? `${PREVIEW_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax; Secure; HttpOnly`
+      : `${PREVIEW_COOKIE}=1; Path=/; Max-Age=2592000; SameSite=Lax; Secure; HttpOnly`;
+    return new Response(null, { status: 302, headers: { Location: '/', 'Set-Cookie': cookie } });
+  }
+
+  const cookies = c.req.header('cookie') || '';
+  if (cookies.split(/;\s*/).includes(`${PREVIEW_COOKIE}=1`)) return next();
+
+  const res = await c.env.ASSETS.fetch(new Request(new URL('/coming-soon', url), c.req.raw));
+  const headers = new Headers(res.headers);
+  headers.set('cache-control', 'no-store');
+  return new Response(res.body, { status: res.status, headers });
+});
+
+// ===========================================================================
 // Verwaltung: Es gibt genau EIN Admin-Panel — das der Website selbst
 // (public/admin.jsx, Route #admin). /admin und /login leiten dorthin weiter,
 // damit alte Lesezeichen weiterhin funktionieren.
