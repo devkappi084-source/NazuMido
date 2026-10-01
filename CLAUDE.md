@@ -18,8 +18,8 @@ There is no build step — the site runs directly in the browser via CDN-hosted 
 The `wrangler.toml` serves the `public/` directory as static assets (`directory = "./public"`). **Everything the browser loads must live under `public/`** — files in the repo root are never served. The Worker (`src/worker.js`) only handles paths with no matching file: `/api/*`, `/uploads/*`, and the redirects `/admin` → `/#admin`, `/login` → `/#login`.
 
 **Coming-Soon-Modus:** `COMING_SOON = "true"` in `wrangler.toml` makes the Worker
-serve `public/coming-soon.html` (standalone, no React — wappen, countdown to the
-next 11.11. 11:11, confetti) instead of the start page. The entry paths `/`,
+serve `public/coming-soon.html` (standalone, no React — wappen, tagline,
+groups, confetti) instead of the start page. The entry paths `/`,
 `/index.html`, `/Nazumido.html` are listed in `[assets].run_worker_first` so the
 Worker sees them at all. `/?vorschau` sets the `nz_vorschau` cookie and shows the
 real site (with the secret `PREVIEW_KEY` set it must be `/?vorschau=<key>`);
