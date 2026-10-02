@@ -1,4 +1,4 @@
-// End-to-End-Test des Cloudflare Workers via Miniflare (echtes D1 + R2, in-process).
+// End-to-End-Test der Pages Function (functions/ + src/worker.js) via Miniflare (echtes D1 + R2, in-process).
 import { Miniflare, createFetchMock } from 'miniflare';
 import { readFileSync } from 'node:fs';
 
@@ -12,7 +12,7 @@ async function serializeForm(fd) {
 const mf = new Miniflare({
   modules: true,
   compatibilityDate: '2024-09-23',
-  scriptPath: './dist-worker/worker.js',
+  scriptPath: './dist-worker/index.js',
   d1Databases: { DB: 'nazumido-test-db' },
   r2Buckets: { BUCKET: 'nazumido-uploads' },
   bindings: {
@@ -234,7 +234,7 @@ try {
   const mfMail = new Miniflare({
     modules: true,
     compatibilityDate: '2024-09-23',
-    scriptPath: './dist-worker/worker.js',
+    scriptPath: './dist-worker/index.js',
     d1Databases: { DB: 'nazumido-mail-db' },
     r2Buckets: { BUCKET: 'nazumido-uploads' },
     fetchMock,

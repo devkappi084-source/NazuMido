@@ -6,13 +6,3 @@ package-lock.json
 dist-worker/
 .dev.vars*
 !.dev.vars.example
-.env*
-!.env.example
-
-# Node / Express Server
-db/*.sqlite
-db/*.sqlite-journal
-
-# Hochgeladene Fotos (Ordner bleibt via .gitkeep erhalten)
-uploads/*
-!uploads/.gitkeep
