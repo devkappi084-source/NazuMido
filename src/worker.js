@@ -14,9 +14,9 @@
 // #admin; das frühere zweite Dashboard unter /admin wurde entfernt. Der Rest der
 // API bleibt für eine spätere serverseitige Speicherung erhalten.
 
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { sign, verify } from 'hono/jwt';
+// hono liegt gebündelt in src/vendor/hono.js, weil Cloudflare Pages ohne
+// Build-Befehl kein `npm install` ausführt. Neu erzeugen: npm run vendor
+import { Hono, cors, sign, verify } from './vendor/hono.js';
 
 const app = new Hono();
 

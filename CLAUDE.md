@@ -51,6 +51,7 @@ public/                     — everything served to the browser
   assets/                     — logo.png (Wappen), garde.png, guggenmusik.png, plus photos
 functions/[[path]].js       — Pages Function, forwards to src/worker.js
 src/worker.js               — Hono app: API, D1, R2, coming-soon, redirects
+src/vendor/hono.js          — hono, pre-bundled (`npm run vendor`); Pages runs no npm install without a build command
 schema.sql                  — D1 schema
 test/worker.e2e.mjs         — Miniflare end-to-end test (npm test)
 wrangler.toml               — Cloudflare Pages config
