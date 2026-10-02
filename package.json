@@ -9,13 +9,13 @@
     "deploy": "wrangler pages deploy",
     "db:local": "wrangler d1 execute nazumido-db --local --file=./schema.sql",
     "db:remote": "wrangler d1 execute nazumido-db --remote --file=./schema.sql",
-    "test": "wrangler pages functions build --outdir=./dist-worker && node test/worker.e2e.mjs"
+    "test": "wrangler pages functions build --outdir=./dist-worker && node test/worker.e2e.mjs",
+    "vendor": "esbuild src/vendor/hono-entry.js --bundle --format=esm --platform=neutral --minify --legal-comments=inline --outfile=src/vendor/hono.js \"--banner:js=// hono (MIT, github.com/honojs/hono), gebündelt mit npm run vendor. Nicht von Hand bearbeiten.\""
   },
   "license": "MIT",
-  "dependencies": {
-    "hono": "^4.13.1"
-  },
   "devDependencies": {
+    "esbuild": "^0.28.1",
+    "hono": "^4.13.1",
     "miniflare": "^4.20260730.0",
     "wrangler": "~4.120.1"
   }

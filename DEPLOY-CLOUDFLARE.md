@@ -30,8 +30,10 @@ bündelt Cloudflare automatisch.
    | Root directory | *(leer lassen)* |
 
 4. **Save and Deploy.** Cloudflare liest die `wrangler.toml` (D1-Binding,
-   Variablen) automatisch mit, installiert `hono` aus der `package.json` und
-   baut die Function aus `functions/`.
+   Variablen) automatisch mit und baut die Function aus `functions/`. Ohne
+   Build-Befehl führt Pages kein `npm install` aus — deshalb liegt `hono`
+   fertig gebündelt in `src/vendor/hono.js` (neu erzeugen mit
+   `npm run vendor`, z. B. nach einem hono-Update).
 
 Danach deployt Cloudflare bei jedem Push automatisch neu; andere Branches
 bekommen eigene Vorschau-URLs.
@@ -150,6 +152,8 @@ Lokale Secrets: `.dev.vars.example` nach `.dev.vars` kopieren.
 - **API liefert 404 / HTML statt JSON** → Build output directory muss `public`
   sein und der Ordner `functions/` im Repo-Root liegen; `public/_routes.json`
   muss mit hochgeladen werden.
+- **`Could not resolve "hono"`** → `src/worker.js` muss aus
+  `./vendor/hono.js` importieren, nicht aus dem npm-Paket `hono`.
 - **`D1_ERROR: no such table`** → `npm run db:remote` ausführen.
 - **„JWT_SECRET ist im Pages-Projekt nicht gesetzt"** → Secret anlegen und neu
   deployen; `/api/health` zeigt unter `bindings`, was ankommt.
