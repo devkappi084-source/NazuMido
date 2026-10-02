@@ -8,20 +8,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Deployment
 
+The site runs on **Cloudflare Pages** (project name `nazumido`).
+
 ```bash
-npx wrangler deploy        # deploy to Cloudflare Workers (app name: nazumido2)
-npx wrangler dev           # local dev server on http://localhost:8787
+npx wrangler pages deploy  # deploy public/ + functions/ to Cloudflare Pages
+npx wrangler pages dev     # local dev server on http://localhost:8788
+npm test                   # build the Pages Function and run the Miniflare e2e test
 ```
 
-There is no build step — the site runs directly in the browser via CDN-hosted React 18.3.1 + Babel standalone 7.29.0. Open `public/index.html` (or `public/Nazumido.html`, they are identical) in a browser or use `wrangler dev` to preview.
+With the Git integration in the dashboard: build command empty, build output
+directory `public`. `wrangler.toml` carries `pages_build_output_dir`, the D1
+binding and the `[vars]`; secrets are set with `npx wrangler pages secret put`.
 
-The `wrangler.toml` serves the `public/` directory as static assets (`directory = "./public"`). **Everything the browser loads must live under `public/`** — files in the repo root are never served. The Worker (`src/worker.js`) only handles paths with no matching file: `/api/*`, `/uploads/*`, and the redirects `/admin` → `/#admin`, `/login` → `/#login`.
+There is no build step — the site runs directly in the browser via CDN-hosted React 18.3.1 + Babel standalone 7.29.0. Open `public/index.html` in a browser or use `wrangler pages dev` to preview.
 
-**Coming-Soon-Modus:** `COMING_SOON = "true"` in `wrangler.toml` makes the Worker
+Pages serves `public/` as static assets. **Everything the browser loads must live under `public/`** — files in the repo root are never served. The Pages Function `functions/[[path]].js` hands requests to the Hono app in `src/worker.js`, but only for the paths listed in `public/_routes.json`: `/api/*`, `/uploads/*`, `/admin`, `/login` (redirects to `/#admin`, `/#login`) and the entry paths `/`, `/index.html`. `public/_redirects` sends the old `/Nazumido.html` to `/`.
+
+**Coming-Soon-Modus:** `COMING_SOON = "true"` in `wrangler.toml` makes the Function
 serve `public/coming-soon.html` (standalone, no React — wappen, tagline,
-groups, confetti) instead of the start page. The entry paths `/`,
-`/index.html`, `/Nazumido.html` are listed in `[assets].run_worker_first` so the
-Worker sees them at all. `/?vorschau` sets the `nz_vorschau` cookie and shows the
+groups, confetti) instead of the start page. `/?vorschau` sets the `nz_vorschau` cookie and shows the
 real site (with the secret `PREVIEW_KEY` set it must be `/?vorschau=<key>`);
 `/?vorschau=aus` ends the preview. Everything else (assets, `/api/*`) is untouched.
 
@@ -31,7 +36,9 @@ The three CDN `<script>` tags carry Subresource-Integrity hashes. Bumping React 
 
 ```
 public/                     — everything served to the browser
-  index.html / Nazumido.html  — Entry point (identical); loads CDN scripts + .jsx files
+  index.html                  — Entry point; loads CDN scripts + .jsx files
+  _routes.json                — which paths run through the Pages Function
+  _redirects                  — static redirects (old /Nazumido.html → /)
   coming-soon.html            — Standalone placeholder page (Coming-Soon-Modus)
   styles.css                  — All CSS, including CSS variables
   pdf.jsx                     — Minimal PDF writer (reservation confirmation)
@@ -42,8 +49,11 @@ public/                     — everything served to the browser
   admin.jsx                   — admin panel (#admin route), the only admin UI
   app.jsx                     — Root App component, routing
   assets/                     — logo.png (Wappen), garde.png, guggenmusik.png, plus photos
-src/worker.js               — Cloudflare Worker: API, D1, R2
-wrangler.toml               — Cloudflare Workers config
+functions/[[path]].js       — Pages Function, forwards to src/worker.js
+src/worker.js               — Hono app: API, D1, R2, coming-soon, redirects
+schema.sql                  — D1 schema
+test/worker.e2e.mjs         — Miniflare end-to-end test (npm test)
+wrangler.toml               — Cloudflare Pages config
 ```
 
 ## Architecture
@@ -190,7 +200,7 @@ dates that *are* open.
 
 Submitting writes the reservation to `localStorage` (`nazumido_reservations`,
 same store for both paths since it is the same origin) **and** posts it to the
-Worker via `submitReservation()` → `POST /api/reservations`, which stores it in
+Pages Function via `submitReservation()` → `POST /api/reservations`, which stores it in
 D1 and sends the confirmation mail (see *Confirmation mail* below). The success
 view shows the mail status; while it is unsent it still offers the prefilled
 `mailto:` link to `tickets.notifyEmail` (falling back to `SITE_CONFIG.email`),
@@ -247,7 +257,7 @@ confirmation mail, see above); everything else still lives in `localStorage`.
 
 **Caveat worth knowing:** because storage is `localStorage`, edits are visible
 only in the browser that made them — they do not reach site visitors. Moving
-content to the Worker API (D1) is the open next step if edits must go live.
+content to the API in `src/worker.js` (D1) is the open next step if edits must go live.
 
 The React panel has two modes: *Schnellzugriff* (Events, Neuigkeiten, Galerie,
 Vereinsinfo, Einstellungen) and *Vollzugriff* (all tabs). Tabs are declared in the `ADM_TABS`

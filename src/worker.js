@@ -1,13 +1,11 @@
-// src/worker.js — Nazumido als Cloudflare Worker
+// src/worker.js — Nazumido-API (Hono) für Cloudflare Pages
 //
-// Ersetzt das frühere Express-Backend (server.js + routes/api.js + db/init.js +
-// middleware/auth.js). Läuft „serverless" auf Cloudflare Workers und nutzt:
+// Wird von der Pages Function functions/[[path]].js aufgerufen, und zwar nur
+// für die Pfade aus public/_routes.json. Nutzt:
 //
-//   • D1      (env.DB)      — SQLite-kompatible Datenbank statt lokaler Datei
-//   • R2      (env.BUCKET)  — Objektspeicher für Foto-Uploads statt /uploads-Ordner
+//   • D1      (env.DB)      — SQLite-kompatible Datenbank
+//   • R2      (env.BUCKET)  — Objektspeicher für Foto-Uploads (optional)
 //   • Assets  (env.ASSETS)  — statische Website aus dem Ordner ./public
-//
-// Die REST-API unter /api ist zeichengleich zur bisherigen Express-Version.
 //
 // HINWEIS: Die Website selbst liest ihre Inhalte aus public/data.jsx (plus den
 // Admin-Überschreibungen im localStorage). Die einzige Route, die sie aufruft,
@@ -98,8 +96,8 @@ function requireJwtSecret(env) {
   const secret = env.JWT_SECRET;
   if (typeof secret !== 'string' || secret.length === 0) {
     throw new Error(
-      'JWT_SECRET ist im Worker nicht gesetzt. Im Cloudflare-Dashboard unter ' +
-        'Workers & Pages → nazumido2 → Settings → Variables and Secrets als Secret ' +
+      'JWT_SECRET ist im Pages-Projekt nicht gesetzt. Im Cloudflare-Dashboard unter ' +
+        'Workers & Pages → nazumido → Settings → Variables and Secrets als Secret ' +
         'anlegen und danach neu deployen. Prüfen mit /api/health.'
     );
   }
@@ -705,13 +703,13 @@ app.get('/uploads/:key{.+}', async (c) => {
 
 // ===========================================================================
 // Coming-Soon-Modus: Mit COMING_SOON = "true" (wrangler.toml) bekommen
-// Besucher statt der Startseite public/coming-soon.html. Damit der Worker die
-// Startseite überhaupt sieht, stehen ihre Pfade in [assets].run_worker_first.
+// Besucher statt der Startseite public/coming-soon.html. Damit die Function die
+// Startseite überhaupt sieht, stehen ihre Pfade in public/_routes.json.
 // Das Team öffnet einmal /?vorschau (bzw. /?vorschau=<PREVIEW_KEY>, falls
 // gesetzt) und sieht danach per Cookie die echte Seite; /?vorschau=aus beendet
 // die Vorschau wieder.
 // ===========================================================================
-const ENTRY_PAGES = new Set(['/', '/index.html', '/Nazumido.html']);
+const ENTRY_PAGES = new Set(['/', '/index.html']);
 const PREVIEW_COOKIE = 'nz_vorschau';
 
 app.get('*', async (c, next) => {
@@ -753,8 +751,8 @@ app.get('/login', (c) => c.redirect('/#login', 302));
 app.all('/api/*', (c) => c.json({ error: 'Endpunkt nicht gefunden' }, 404));
 
 // ===========================================================================
-// Alles andere -> statische Assets (Fallback; normalerweise liefert Cloudflare
-// passende Dateien schon vor dem Worker aus).
+// Alles andere -> statische Assets (Fallback; Pfade außerhalb von
+// public/_routes.json liefert Pages ohnehin direkt aus).
 // ===========================================================================
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 

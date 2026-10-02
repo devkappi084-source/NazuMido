@@ -1,252 +1,158 @@
-# Nazumido auf Cloudflare hosten (Workers + D1 + R2)
+# Nazumido auf Cloudflare Pages hosten
 
-Diese Anleitung beschreibt, wie die **komplette** Website inklusive Admin-Panel,
-Login und Foto-Uploads auf Cloudflare läuft — ohne separaten Node-Server.
+Die Website läuft komplett auf **Cloudflare Pages** — ohne eigenen Server:
 
-## Architektur
+| Aufgabe | Umsetzung |
+|---|---|
+| Website ausliefern | **Pages** liefert den Ordner `public/` statisch aus |
+| REST-API `/api`, Coming-Soon-Modus, `/admin`-Weiterleitung | **Pages Function** `functions/[[path]].js` → Hono-App in `src/worker.js` |
+| Welche Pfade durch die Function laufen | `public/_routes.json` |
+| Datenbank (Reservierungen) | **D1** (`env.DB`) |
+| Foto-Uploads über die API (optional) | **R2** (`env.BUCKET`) |
 
-| Aufgabe | Früher (Express) | Jetzt (Cloudflare) |
-|---|---|---|
-| Website ausliefern | `express.static` | **Workers Static Assets** (`public/`) |
-| REST-API `/api` | Express-Router | **Worker** (`src/worker.js`, Hono) |
-| Datenbank | lokale `sqlite3`-Datei | **D1** (`env.DB`) |
-| Foto-Uploads | `multer` → `/uploads` | **R2** (`env.BUCKET`) |
-| Login/JWT | `jsonwebtoken` + `bcryptjs` | Web Crypto (JWT + PBKDF2) |
-
-Das Frontend in `public/` blieb unverändert — es spricht weiterhin `/api` und
-`/uploads` auf derselben Domain an.
+Es gibt **keinen Build-Schritt** — `public/` wird 1:1 hochgeladen, die Function
+bündelt Cloudflare automatisch.
 
 ---
 
-## Voraussetzungen (einmalig)
+## Variante A — über das Dashboard mit GitHub (empfohlen)
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages →
+   Create → Pages → Connect to Git**.
+2. GitHub verbinden, Repo `NazuMido` und den Produktions-Branch wählen.
+3. Build-Einstellungen:
+
+   | Feld | Wert |
+   |---|---|
+   | Framework preset | `None` |
+   | Build command | *(leer lassen)* |
+   | Build output directory | `public` |
+   | Root directory | *(leer lassen)* |
+
+4. **Save and Deploy.** Cloudflare liest die `wrangler.toml` (D1-Binding,
+   Variablen) automatisch mit, installiert `hono` aus der `package.json` und
+   baut die Function aus `functions/`.
+
+Danach deployt Cloudflare bei jedem Push automatisch neu; andere Branches
+bekommen eigene Vorschau-URLs.
+
+## Variante B — per Terminal
 
 ```bash
-npm install                 # Abhängigkeiten inkl. wrangler
-npx wrangler login          # Cloudflare-Konto verbinden (öffnet den Browser)
+npm install
+npx wrangler login
+npx wrangler pages project create nazumido --production-branch main
+npm run deploy             # = wrangler pages deploy
 ```
-
-> **Hinweis zur wrangler-Version:** `wrangler` ist bewusst auf `~4.120.1`
-> gepinnt. Version 4.121.0 verlangt `miniflare@5.20260804.1-alpha`, ein Paket,
-> das gar nicht auf npm liegt — der Cloudflare-Build bricht dann schon beim
-> Installieren ab (`error: miniflare@… failed to resolve`). Erst wenn eine
-> neuere wrangler-Version wieder auf ein vorhandenes miniflare zeigt, kann der
-> Pin angehoben werden.
 
 ---
 
-## Schritt 1 — D1-Datenbank anlegen
+## Schritt 1 — D1-Datenbank
+
+Die `database_id` steht bereits in der `wrangler.toml`. Für eine neue
+Datenbank:
 
 ```bash
-npx wrangler d1 create nazumido-db
+npx wrangler d1 create nazumido-db      # ID in wrangler.toml eintragen
+npm run db:remote                       # schema.sql einspielen
 ```
 
-Der Befehl gibt einen Block wie diesen aus:
+Ohne Terminal: **Storage & Databases → D1 → Create** → Name `nazumido-db`,
+dann im Tab **Console** den Inhalt von `schema.sql` ausführen. Die Tabelle
+`reservations` legt die Function bei Bedarf auch selbst an.
 
-```
-[[d1_databases]]
-binding = "DB"
-database_name = "nazumido-db"
-database_id = "abcd1234-...."      <-- diese ID kopieren
-```
+## Schritt 2 — R2-Bucket (optional)
 
-Die **`database_id`** in die `wrangler.toml` eintragen (ersetzt den Platzhalter
-`HIER-DIE-ID-AUS-wrangler-d1-create-EINTRAGEN`).
-
-Danach das Schema + die Startdaten in die **Produktions**-Datenbank einspielen:
-
-```bash
-npm run cf:db:remote
-# entspricht: wrangler d1 execute nazumido-db --remote --file=./schema.sql
-```
-
-> Der Standard-Admin wird **nicht** hier angelegt, sondern automatisch beim
-> allerersten Login (siehe Schritt 3).
-
----
-
-## Schritt 2 — R2-Bucket für Fotos anlegen
+Nur nötig, wenn Fotos über `POST /api/upload` hochgeladen werden sollen (die
+Website selbst nutzt das derzeit nicht):
 
 ```bash
 npx wrangler r2 bucket create nazumido-uploads
 ```
 
-Der Name `nazumido-uploads` steht bereits in der `wrangler.toml`. R2 erfordert
-in deinem Cloudflare-Konto eine einmalige (kostenlose) Aktivierung im Dashboard.
-
----
+und den `[[r2_buckets]]`-Block in der `wrangler.toml` einkommentieren.
 
 ## Schritt 3 — Geheimnisse setzen
 
-Diese Werte gehören **nicht** in Dateien, sondern verschlüsselt zu Cloudflare:
-
 ```bash
-# Signierschlüssel für die JWTs — langen Zufallswert erzeugen:
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-npx wrangler secret put JWT_SECRET
-#   -> den erzeugten Wert einfügen
-
-# Passwort des Standard-Admins (wird beim ersten Login angelegt):
-npx wrangler secret put ADMIN_PASSWORD
-#   -> Wunschpasswort eingeben
+npx wrangler pages secret put JWT_SECRET        # erzeugten Wert einfügen
+npx wrangler pages secret put ADMIN_PASSWORD    # Passwort für /api/login
 ```
 
-Der Benutzername steht als nicht-geheime Variable `ADMIN_USERNAME` in der
-`wrangler.toml` (Standard: `admin`).
+Ohne Terminal: Pages-Projekt → **Settings → Variables and Secrets** → als
+*Secret* anlegen, danach neu deployen.
 
-> **Wichtig:** `ADMIN_PASSWORD` ist die maßgebliche Quelle für das Admin-Passwort.
-> Beim Login gleicht der Worker den gespeicherten Hash damit ab und aktualisiert
-> ihn bei Bedarf — ein nachträglich geändertes Secret wirkt also sofort, ganz ohne
-> `DELETE FROM admins;`. Ist gar kein `ADMIN_PASSWORD` gesetzt, wird der Admin
-> beim ersten Login mit dem Notfall-Standard `nazumido` angelegt.
-
----
+`ADMIN_PASSWORD` ist die maßgebliche Quelle für das API-Admin-Passwort; ein
+nachträglich geändertes Secret wirkt sofort. Der Benutzername steht als
+`ADMIN_USERNAME` in der `wrangler.toml`.
 
 ## Schritt 3b — Bestätigungsmails für Ticket-Reservierungen (optional)
 
 Reservierungen von der Website landen über `POST /api/reservations` in D1. Ist
-ein Mailanbieter hinterlegt, verschickt der Worker sofort zwei Mails: die
+ein Mailanbieter hinterlegt, verschickt die Function sofort zwei Mails: die
 Bestätigung an die Besucher:in und eine Kopie an den Verein. Fehlt der Anbieter,
-wird nur gespeichert und die Website bietet wie bisher den mailto-Link an —
-nichts geht verloren.
+wird nur gespeichert und die Website bietet den mailto-Link an.
 
-Cloudflare Workers können selbst keine Mails verschicken; nötig ist ein Konto
-bei einem Anbieter mit HTTP-API. Unterstützt werden **Resend**, **Brevo** und
-**Mailgun** (kostenlose Kontingente reichen für einen Verein locker aus):
+Unterstützt werden **Resend**, **Brevo** und **Mailgun**:
 
 ```bash
 # 1. Anbieter-Schlüssel als Secret (nur einer davon nötig)
-npx wrangler secret put RESEND_API_KEY      # Resend
-#   oder: npx wrangler secret put BREVO_API_KEY
-#   oder: npx wrangler secret put MAILGUN_API_KEY   (+ MAILGUN_DOMAIN, MAILGUN_REGION="eu")
+npx wrangler pages secret put RESEND_API_KEY
+#   oder: BREVO_API_KEY / MAILGUN_API_KEY (+ MAILGUN_DOMAIN, MAILGUN_REGION="eu")
 
 # 2. Absender und Empfänger in wrangler.toml unter [vars] eintragen:
 #    MAIL_FROM  = "Faschingsverein Nazumido <tickets@nazu-mido.at>"
 #    CLUB_EMAIL = "Nazu.Mido@gmx.at"
 ```
 
-Die Absenderdomain muss beim Anbieter verifiziert sein (SPF/DKIM-Einträge im
-DNS), sonst weist er den Versand ab. `MAIL_PROVIDER` ist optional und nur nötig,
-wenn mehrere Schlüssel gesetzt sind.
-
-Prüfen:
+Die Absenderdomain muss beim Anbieter verifiziert sein (SPF/DKIM). Prüfen:
 
 ```bash
-curl -s https://<deine-domain>/api/health          # zeigt, welche Variablen ankommen
+curl -s https://<deine-domain>/api/health
 curl -s -X POST https://<deine-domain>/api/reservations \
   -H 'Content-Type: application/json' \
   -d '{"eventTitle":"Test","eventDate":"1. Jänner","name":"Test","email":"du@example.at","count":1}'
-# -> {"ok":true,"code":"NZ-…","mail":{"configured":true,"visitor":"sent","club":"sent",…}}
 ```
 
-Ein-/ausschalten lässt sich der automatische Versand im Admin-Panel unter
-*Einstellungen › Tickets › Bestätigung*. Die gespeicherten Reservierungen holt
-`GET /api/admin/reservations` (JWT vom `/api/login`).
+Ein-/ausschalten lässt sich der Versand im Admin-Panel unter
+*Einstellungen › Tickets › Bestätigung*.
 
 ---
 
-## Schritt 4 — Deployen
+## Coming-Soon-Modus
+
+`COMING_SOON = "true"` in der `wrangler.toml` (oder als Variable im Dashboard)
+zeigt Besuchern `public/coming-soon.html`. Das Team öffnet einmal `/?vorschau`
+(bzw. `/?vorschau=<PREVIEW_KEY>`) und sieht danach die echte Seite;
+`/?vorschau=aus` beendet die Vorschau.
+
+## Eigene Domain
+
+Pages-Projekt → **Custom domains → Set up a custom domain** (z. B.
+`www.nazu-mido.at`).
+
+---
+
+## Lokale Entwicklung & Tests
 
 ```bash
-npm run cf:deploy          # = wrangler deploy
+npm install
+npm run db:local          # Schema einmalig ins lokale D1
+npm run dev               # = wrangler pages dev  → http://localhost:8788
+npm test                  # baut die Function und testet die API mit Miniflare
 ```
 
-Wrangler nennt dir am Ende die URL, z. B.
-`https://nazumido2.<dein-subdomain>.workers.dev`.
-
-| Pfad | Inhalt |
-|---|---|
-| `/` | Öffentliche Startseite |
-| `/login.html` | Admin-Login |
-| `/admin` | Admin-Dashboard |
-| `/api/health` | API-Statuscheck |
-
----
-
-## Eigene Domain (optional)
-
-Im Cloudflare-Dashboard unter **Workers & Pages → nazumido2 → Settings →
-Domains & Routes** eine eigene Domain (z. B. `www.nazumido.at`) verbinden.
-Voraussetzung: Die Domain wird über Cloudflare verwaltet (Nameserver).
-
----
-
-## Lokale Entwicklung
-
-```bash
-npm run cf:db:local        # Schema einmalig ins lokale D1 einspielen
-npm run cf:dev             # = wrangler dev  (lokaler Worker mit D1 + R2)
-```
-
-Ohne gesetzte Secrets nutzt der Worker lokal die Standardwerte
-(`admin` / `nazumido`). Für echte lokale Secrets eine Datei `.dev.vars` anlegen:
-
-```
-JWT_SECRET=lokaler-testschluessel
-ADMIN_PASSWORD=nazumido
-```
-
----
-
-## Tests
-
-Ein vollständiger End-to-End-Test (echtes D1 + R2 über Miniflare, prüft Login,
-Beiträge-CRUD, Einstellungen und Foto-Upload) liegt unter `test/worker.e2e.mjs`:
-
-```bash
-npm run cf:test
-```
-
----
-
-## Alternative: komplett über das Dashboard (ohne Terminal)
-
-Wer keine Befehle tippen möchte, kann alles im Browser auf
-[dash.cloudflare.com](https://dash.cloudflare.com) erledigen. Cloudflare baut den
-Worker dann selbst aus dem verbundenen GitHub-Repo („Workers Builds").
-
-> Hinweise: R2 verlangt einmalig eine hinterlegte Zahlungsart (Gratis-Stufe
-> kostet nichts). Eine kleine Änderung an `wrangler.toml` (die Database ID) wird
-> über die GitHub-Weboberfläche gemacht — ebenfalls ohne Terminal.
-
-**A) D1-Datenbank anlegen**
-1. **Storage & Databases → D1 SQL Database → Create Database** → Name `nazumido-db`.
-2. Datenbank öffnen → Tab **Console** → Inhalt von `schema.sql` einfügen → **Execute**.
-3. Die **Database ID** auf der Übersichtsseite kopieren.
-
-**B) Database ID eintragen (über github.com)**
-1. Repo öffnen → Datei `wrangler.toml` → Bearbeiten (Bleistift-Symbol).
-2. Platzhalter `HIER-DIE-ID-...` durch die Database ID ersetzen → **Commit changes**.
-
-**C) R2-Bucket anlegen**
-1. **R2 Object Storage** → ggf. aktivieren → **Create bucket** → Name `nazumido-uploads`.
-
-**D) Worker aus dem Repo deployen**
-1. **Workers & Pages → Create → Workers → Import a repository / Connect to Git**.
-2. GitHub verbinden, Repo und Branch wählen. Cloudflare liest `wrangler.toml`
-   (Assets, D1, R2) automatisch → **Save and Deploy**.
-
-**E) Geheimnisse setzen**
-1. Worker öffnen → **Settings → Variables and Secrets**.
-2. Secret `JWT_SECRET` (lange Zufallszeichenkette) und Secret `ADMIN_PASSWORD`
-   hinzufügen → oben **Deploy**.
-
-**F) Aufrufen**
-- Worker-URL öffnen, `/admin` → Login mit `admin` / `ADMIN_PASSWORD`.
-
-Ab jetzt deployt Cloudflare bei jeder Repo-Änderung automatisch neu.
+Lokale Secrets: `.dev.vars.example` nach `.dev.vars` kopieren.
 
 ## Häufige Stolperfallen
 
-- **`/admin` lädt nicht / API 404** → `wrangler.toml`: steht `main = "src/worker.js"`?
-  Ohne `main` liefert Cloudflare nur statische Dateien und keine API.
-- **`D1_ERROR: no such table`** → Schema vergessen: `npm run cf:db:remote` ausführen.
-- **Login schlägt fehl / „Ungültiges Token"** → `JWT_SECRET` nicht als Secret
-  gesetzt. Nach dem Setzen erneut `npm run cf:deploy`.
-- **Login meldet „JWT_SECRET ist im Worker nicht gesetzt"** → das Secret kommt zur
-  Laufzeit nicht an. `https://<deine-domain>/api/health` im Browser öffnen: unter
-  `bindings` müssen `DB`, `BUCKET`, `ASSETS` und `JWT_SECRET` auftauchen. Fehlt
-  `JWT_SECRET` dort, obwohl es im Dashboard steht, läuft noch eine ältere
-  Worker-Version — neu deployen.
-- **Foto-Upload-Fehler** → R2-Bucket nicht angelegt oder R2 im Konto nicht aktiviert.
-- **Bilder werden nicht angezeigt** → sie liegen jetzt in R2 und werden vom Worker
-  unter `/uploads/<key>` ausgeliefert; alte lokale `/uploads`-Dateien existieren dort nicht.
+- **API liefert 404 / HTML statt JSON** → Build output directory muss `public`
+  sein und der Ordner `functions/` im Repo-Root liegen; `public/_routes.json`
+  muss mit hochgeladen werden.
+- **`D1_ERROR: no such table`** → `npm run db:remote` ausführen.
+- **„JWT_SECRET ist im Pages-Projekt nicht gesetzt"** → Secret anlegen und neu
+  deployen; `/api/health` zeigt unter `bindings`, was ankommt.
+- **`wrangler`-Version** ist auf `~4.120.1` gepinnt, weil 4.121.0 ein nicht
+  veröffentlichtes miniflare verlangt und der Build sonst beim Installieren
+  abbricht.
