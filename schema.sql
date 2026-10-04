@@ -50,6 +50,16 @@ CREATE TABLE IF NOT EXISTS reservations (
 
 CREATE INDEX IF NOT EXISTS idx_reservations_event ON reservations (event_iso, event_id);
 
+-- Website-Inhalte aus dem Admin-Panel (#admin): je Bereich (NEWS, EVENTS,
+-- SITE_CONFIG, …) eine Zeile mit dem JSON-Wert. Die Website legt sie beim Laden
+-- über den Grundstand aus public/data.jsx (GET /api/content). Wird vom Worker
+-- ebenfalls bei Bedarf angelegt.
+CREATE TABLE IF NOT EXISTS content (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS admins (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT UNIQUE NOT NULL,

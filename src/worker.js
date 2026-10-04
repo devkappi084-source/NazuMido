@@ -7,12 +7,11 @@
 //   • R2      (env.BUCKET)  — Objektspeicher für Foto-Uploads (optional)
 //   • Assets  (env.ASSETS)  — statische Website aus dem Ordner ./public
 //
-// HINWEIS: Die Website selbst liest ihre Inhalte aus public/data.jsx (plus den
-// Admin-Überschreibungen im localStorage). Die einzige Route, die sie aufruft,
-// ist POST /api/reservations — dort werden Ticket-Reservierungen gespeichert und
-// die Bestätigungsmail verschickt. Verwaltet wird ansonsten über das Panel unter
-// #admin; das frühere zweite Dashboard unter /admin wurde entfernt. Der Rest der
-// API bleibt für eine spätere serverseitige Speicherung erhalten.
+// Inhalte: public/data.jsx liefert den Grundstand. Was im Admin-Panel (#admin)
+// geändert wird, landet über PUT /api/admin/content in der D1-Tabelle
+// `content` und wird von jeder Besucher:in beim Laden über GET /api/content
+// darübergelegt — Änderungen wirken also global. Dazu kommen die Ticket-
+// Reservierungen (POST /api/reservations) samt Bestätigungsmail.
 
 // hono liegt gebündelt in src/vendor/hono.js, weil Cloudflare Pages ohne
 // Build-Befehl kein `npm install` ausführt. Neu erzeugen: npm run vendor
@@ -144,31 +143,27 @@ function db(c) {
 
 // Hält den Standard-Admin mit dem Secret ADMIN_PASSWORD in Einklang (das
 // Passwort muss zur Laufzeit gehasht werden und kann daher nicht in schema.sql
-// stehen):
-//
-//   • Kein Admin vorhanden  -> wird angelegt (ADMIN_PASSWORD, sonst 'nazumido').
-//   • Admin vorhanden und ADMIN_PASSWORD gesetzt, passt aber nicht zum
-//     gespeicherten Hash -> das Passwort wird auf ADMIN_PASSWORD aktualisiert.
-//
-// Dadurch wirkt ein nachträglich gesetztes/geändertes ADMIN_PASSWORD sofort;
-// vorher galt es nur beim allerersten Login.
+// stehen): Fehlt der Admin, wird er angelegt; passt der gespeicherte Hash nicht
+// mehr zu ADMIN_PASSWORD, wird er aktualisiert. Ohne ADMIN_PASSWORD gibt es
+// keinen Login (siehe /api/login) — wer sich anmeldet, ändert die Website für
+// alle, ein Standardpasswort wäre daher ein offenes Scheunentor.
 async function ensureAdmin(env) {
   const username = env.ADMIN_USERNAME || 'admin';
-  const configured = typeof env.ADMIN_PASSWORD === 'string' ? env.ADMIN_PASSWORD : '';
+  const configured = env.ADMIN_PASSWORD;
 
   const existing = await env.DB.prepare('SELECT id, password_hash FROM admins WHERE username = ?')
     .bind(username)
     .first();
 
   if (!existing) {
-    const hash = await hashPassword(configured || 'nazumido');
+    const hash = await hashPassword(configured);
     await env.DB.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)')
       .bind(username, hash)
       .run();
     return;
   }
 
-  if (configured && !(await verifyPassword(configured, existing.password_hash))) {
+  if (!(await verifyPassword(configured, existing.password_hash))) {
     const hash = await hashPassword(configured);
     await env.DB.prepare('UPDATE admins SET password_hash = ? WHERE id = ?')
       .bind(hash, existing.id)
@@ -190,6 +185,56 @@ async function ensureReservationsTable(env) {
       'ip_hash TEXT, mail_status TEXT, ' +
       "created_at TEXT NOT NULL DEFAULT (datetime('now')))"
   );
+}
+
+// ---------------------------------------------------------------------------
+// Website-Inhalte aus dem Admin-Panel: je Datenbereich (NEWS, EVENTS, …) eine
+// Zeile mit dem JSON-Wert. Die Schlüssel entsprechen den window-Globals aus
+// public/data.jsx; andere werden abgewiesen.
+// ---------------------------------------------------------------------------
+const CONTENT_KEYS = new Set([
+  'NEWS', 'EVENTS', 'GROUPS', 'PEOPLE', 'PHOTOS', 'PHOTO_GROUPS', 'GARDE', 'MUSIKZUG',
+  'VORSITZ', 'SPONSORS_TIERS', 'INTERNAL', 'SITE_CONFIG', 'ROLES', 'DEMO_USERS',
+]);
+// D1 erlaubt höchstens 2 MB je Zeile — etwas Luft für den Schlüssel lassen.
+const MAX_CONTENT_BYTES = 1_900_000;
+
+async function ensureContentTable(env) {
+  await env.DB.exec(
+    'CREATE TABLE IF NOT EXISTS content (' +
+      'key TEXT PRIMARY KEY, value TEXT NOT NULL, ' +
+      "updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+  );
+}
+
+async function readContent(env) {
+  await ensureContentTable(env);
+  const { results } = await env.DB.prepare('SELECT key, value, updated_at FROM content').all();
+  const content = {};
+  let updatedAt = null;
+  for (const row of results || []) {
+    if (!CONTENT_KEYS.has(row.key)) continue;
+    try {
+      content[row.key] = JSON.parse(row.value);
+    } catch {
+      continue;
+    }
+    if (!updatedAt || row.updated_at > updatedAt) updatedAt = row.updated_at;
+  }
+  return { content, updatedAt };
+}
+
+// Die Mitglieder-Logins gehen an jede Besucher:in — ohne Passwörter. Geprüft
+// wird ein Passwort dann über POST /api/member-login.
+function publicContent(content) {
+  const out = { ...content };
+  if (Array.isArray(out.DEMO_USERS)) {
+    out.DEMO_USERS = out.DEMO_USERS.map((u) => {
+      const { password, ...rest } = u || {};
+      return rest;
+    });
+  }
+  return out;
 }
 
 function makeReservationCode() {
@@ -435,6 +480,37 @@ app.get('/api/settings', async (c) => {
 });
 
 // ===========================================================================
+// ÖFFENTLICH: Website-Inhalte aus dem Admin-Panel
+// ---------------------------------------------------------------------------
+// Die Website lädt das beim Start (public/app.jsx) und legt es über den
+// Grundstand aus data.jsx. `uploads` sagt dem Panel, ob Bilder nach R2 gehen.
+// ===========================================================================
+app.get('/api/content', async (c) => {
+  const { content, updatedAt } = await readContent(c.env);
+  c.header('cache-control', 'no-store');
+  return c.json({ content: publicContent(content), updatedAt, uploads: !!c.env.BUCKET });
+});
+
+// Anmeldung im Mitgliederbereich gegen die im Admin gepflegten Konten. Die
+// Website prüft zuerst lokal (Grundstand aus data.jsx) und fragt nur dann hier.
+app.post('/api/member-login', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!email || !password) return c.json({ error: 'E-Mail und Passwort fehlen' }, 400);
+
+  const { content } = await readContent(c.env);
+  const users = Array.isArray(content.DEMO_USERS) ? content.DEMO_USERS : [];
+  const user = users.find(
+    (u) => u && String(u.email || '').toLowerCase() === email && typeof u.password === 'string' &&
+      timingSafeEqual(u.password, password)
+  );
+  if (!user) return c.json({ error: 'E-Mail oder Passwort nicht korrekt.' }, 401);
+  const { password: _pw, ...safe } = user;
+  return c.json({ user: safe });
+});
+
+// ===========================================================================
 // ÖFFENTLICH: Ticket-Reservierungen
 // ---------------------------------------------------------------------------
 // POST /api/reservations speichert die Reservierung in D1 und verschickt zwei
@@ -509,14 +585,95 @@ app.get('/api/admin/reservations', requireAuth, async (c) => {
   return c.json(results || []);
 });
 
+app.delete('/api/admin/reservations/:id', requireAuth, async (c) => {
+  await ensureReservationsTable(c.env);
+  const res = await db(c).prepare('DELETE FROM reservations WHERE id = ?').bind(c.req.param('id')).run();
+  if (!res.meta || res.meta.changes === 0) return c.json({ error: 'Reservierung nicht gefunden' }, 404);
+  return c.json({ deleted: true });
+});
+
+// ===========================================================================
+// GESCHÜTZT: Website-Inhalte schreiben (Admin-Panel)
+// ---------------------------------------------------------------------------
+// GET liefert alles inkl. Passwörtern der Mitglieder-Konten (die braucht der
+// Benutzer-Tab), PUT nimmt { KEY: wert, … } entgegen, DELETE setzt die Website
+// auf den Grundstand aus data.jsx zurück.
+// ===========================================================================
+app.get('/api/admin/content', requireAuth, async (c) => {
+  const { content, updatedAt } = await readContent(c.env);
+  c.header('cache-control', 'no-store');
+  return c.json({ content, updatedAt, uploads: !!c.env.BUCKET });
+});
+
+app.put('/api/admin/content', requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json({ error: 'Erwartet wird ein Objekt { BEREICH: Wert }' }, 400);
+  }
+  const keys = Object.keys(body);
+  if (keys.length === 0) return c.json({ error: 'Es wurden keine Inhalte übermittelt' }, 400);
+
+  const rows = [];
+  for (const key of keys) {
+    if (!CONTENT_KEYS.has(key)) return c.json({ error: `Unbekannter Bereich: ${key}` }, 400);
+    if (body[key] === undefined || body[key] === null) {
+      return c.json({ error: `Leerer Wert für ${key}` }, 400);
+    }
+    const value = JSON.stringify(body[key]);
+    if (new TextEncoder().encode(value).length > MAX_CONTENT_BYTES) {
+      return c.json(
+        {
+          error:
+            `${key} ist zu groß für die Datenbank (max. ~1,9 MB). Hochgeladene Bilder ` +
+            'lieber als Pfad (assets/…) hinterlegen oder den R2-Bucket aktivieren.',
+        },
+        413
+      );
+    }
+    rows.push([key, value]);
+  }
+
+  await ensureContentTable(c.env);
+  const stmt = db(c).prepare(
+    `INSERT INTO content (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  );
+  await db(c).batch(rows.map(([key, value]) => stmt.bind(key, value)));
+  const { updatedAt } = await readContent(c.env);
+  return c.json({ ok: true, saved: keys, updatedAt });
+});
+
+app.delete('/api/admin/content', requireAuth, async (c) => {
+  await ensureContentTable(c.env);
+  await db(c).prepare('DELETE FROM content').run();
+  return c.json({ ok: true });
+});
+
 // ===========================================================================
 // AUTH: Login — liefert bei Erfolg ein JWT
 // ===========================================================================
 app.post('/api/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const { username, password } = body || {};
-  if (!username || !password) {
-    return c.json({ error: 'username und password sind erforderlich' }, 400);
+  // Das Panel fragt nur nach dem Passwort — der Name ist dann ADMIN_USERNAME.
+  const username = (body && body.username) || c.env.ADMIN_USERNAME || 'admin';
+  const password = body && body.password;
+  if (!password) {
+    return c.json({ error: 'password ist erforderlich' }, 400);
+  }
+  const missing = ['ADMIN_PASSWORD', 'JWT_SECRET'].filter(
+    (k) => typeof c.env[k] !== 'string' || c.env[k].length === 0
+  );
+  if (missing.length) {
+    return c.json(
+      {
+        error:
+          `${missing.join(' und ')} ${missing.length > 1 ? 'sind' : 'ist'} im Pages-Projekt ` +
+          'nicht gesetzt — ohne diese Secrets ist keine Anmeldung möglich ' +
+          '(npx wrangler pages secret put …, siehe DEPLOY-CLOUDFLARE.md).',
+        code: 'not-configured',
+      },
+      503
+    );
   }
 
   // Standard-Admin bei allererstem Login anlegen.

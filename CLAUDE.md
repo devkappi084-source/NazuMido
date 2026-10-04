@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-**Nazumido** is the public website for a fictional Austrian carnival club (Faschingsverein) based in Micheldorf, OÖ, founded 1962. The site is a static single-page application written entirely in German, with no backend.
+**Nazumido** is the public website for a fictional Austrian carnival club (Faschingsverein) based in Micheldorf, OÖ, founded 1962. The site is a static single-page application written entirely in German. A Cloudflare Pages Function (Hono + D1) stores what the admin panel edits, so changes reach every visitor; the pages themselves are plain static files.
 
 ## Deployment
 
@@ -70,7 +70,7 @@ Single-page application with hash-based routing. No bundler, no Node dependencie
 | `components.jsx` | `TopBar`, `Hero`, `Welcome`, `NewsFeed`, `EventsBand`, `SponsorsMarquee`, `GroupsBlock`, `PersonCard`, `PeopleBlock`, `ContactBlock`, `Footer`, `Modal`, `TicketForm`, `openTicketTab` |
 | `pages-detail.jsx` | `SubHero`, `PhotoCard`, `GroupPhotos`, `GaleriePage`, `accentTitle`, `GardePage`, `MusikzugPage`, `VorsitzPage`, `SponsorsPage`, `ReservationPage` |
 | `auth.jsx` | `useAuth`, `LoginPage`, `MemberDashboard` |
-| `app.jsx` | Renders root; no exports (calls `ReactDOM.createRoot`) |
+| `app.jsx` | `NZ_CONTENT_KEYS`, `nzApplyContent`; loads `/api/content`, then renders root (`ReactDOM.createRoot`) |
 
 Each JSX file destructures its React hooks with unique aliases (e.g. `useStateApp`, `useStateA`, `useStateD`) to avoid collisions across files sharing the global `React` object.
 
@@ -103,7 +103,10 @@ Hash-based routing via `window.location.hash`. The `route` state in `app.jsx` dr
 
 Login checks against `demoUsers()` first (that is `DEMO_USERS` incl. the accounts
 added in the admin), then the `nazumido_registry`. E-mail matching is
-case-insensitive.
+case-insensitive. Accounts that come from the database arrive **without**
+passwords (`GET /api/content` strips them), so when the local check fails and
+the content came from the server, `login()` returns a Promise that asks
+`POST /api/member-login`. `LoginPage` handles both sync and async results.
 
 **Predefined logins (defined in `data.jsx`, editable under *Admin › Benutzer*):**
 
@@ -208,10 +211,10 @@ view shows the mail status; while it is unsent it still offers the prefilled
 and `tickets.offerPdf` adds the **Bestätigung als PDF** button
 (`NzPdf.saveReservationPdf`, `public/pdf.jsx`).
 
-The admin's *Reservierungen* list (Events tab) reads the `localStorage` copy, so
-it shows what was booked on that device — the server-side record lives in D1 and
-is fetched with `GET /api/admin/reservations` (JWT, not wired into the panel
-yet). The list filters by date, exports CSV and opens a print view (own tab,
+The admin's *Reservierungen* list (Events tab) shows every reservation from D1
+in live mode (`GET /api/admin/reservations`, delete via
+`DELETE /api/admin/reservations/:id`); in local mode it falls back to the
+`localStorage` copy of that device. The list filters by date, exports CSV and opens a print view (own tab,
 `window.print()`) with a per-date attendee list — name, contact, seats, code,
 note and a tick box, plus the seat total.
 
@@ -245,20 +248,44 @@ There is exactly **one** admin UI: the React panel on the `#admin` route
 (`public/admin.jsx`), styled with the Nazumido brand tokens (red/green/gold on
 cream, Instrument Serif headings, DM Mono labels). It edits all site content:
 Events, Neuigkeiten, **Galerie**, Vereinsinfo, Personen, Gruppen, Sponsoren,
-**Benutzer**, Mitglieder-Inhalte and Einstellungen, and stores everything in
-`localStorage` (`nzadm_*` keys).
+**Benutzer**, Mitglieder-Inhalte and Einstellungen.
 
-A second, Worker-backed dashboard (`public/admin/`, `public/login.html`, D1)
-used to live at `/admin` and `/login`; it was removed because it only covered
-Beiträge and wrote to a database the public site never reads. Both paths now
-redirect to the React panel. The `/api/*` routes in `src/worker.js` stay in
-place for a possible future server-side store — don't add a second UI on top
-of them. The one route the site itself calls is `POST /api/reservations` (ticket
-confirmation mail, see above); everything else still lives in `localStorage`.
+### Global storage (live mode)
 
-**Caveat worth knowing:** because storage is `localStorage`, edits are visible
-only in the browser that made them — they do not reach site visitors. Moving
-content to the API in `src/worker.js` (D1) is the open next step if edits must go live.
+Edits are stored in D1 and apply to **every visitor**:
+
+- **Login:** `AdminLogin` posts the password to `POST /api/login` (username
+  defaults to `ADMIN_USERNAME`; the password is the secret `ADMIN_PASSWORD`).
+  The JWT lives in `sessionStorage` (`nzadm_token`). Without `ADMIN_PASSWORD`
+  or `JWT_SECRET` the endpoint answers 503 `not-configured` — there is no
+  default password, since a login can change the public site.
+- **Saving:** `saveData(key, data)` updates `window[KEY]` and sends
+  `PUT /api/admin/content` with `{ KEY: data }`. Writes are queued so they
+  arrive in order; `SyncBadge` in the panel header shows *Live / Speichert… /
+  Fehler*. Each key is one row in the `content` table (JSON, ≤ ~1.9 MB because
+  D1 caps rows at 2 MB — the API answers 413 above that). Allowed keys are
+  `CONTENT_KEYS` in `src/worker.js`.
+- **Loading:** `app.jsx` waits for `GET /api/content` (4 s timeout) before the
+  first render and lays it over the `data.jsx` defaults
+  (`window.nzApplyContent`). `window.__nzContent` records the source
+  (`server`/`local`), `updatedAt` and whether R2 uploads are available. The
+  public response omits `DEMO_USERS[].password`; after login (and after every
+  reload of `#admin`) the panel fetches the full set from
+  `GET /api/admin/content` so saving accounts doesn't drop their passwords.
+- **Reset:** *Einstellungen › Daten* calls `DELETE /api/admin/content`. The
+  same section offers to publish or discard `nzadm_*` leftovers from local mode.
+
+**Local mode (fallback):** when the API is unreachable (file opened directly,
+static server, no Pages Function) or not configured (503), the panel accepts the
+old local password (`nzadm_pw`, default `admin2026`) and stores in
+`localStorage` (`nzadm_*`) as before — visible only in that browser. A red note
+in the panel says so. `app.jsx` applies `nzadm_*` only when `/api/content`
+failed; once the server answers, the database wins.
+
+A second, Worker-backed dashboard (`public/admin/`, `public/login.html`) used to
+live at `/admin` and `/login`; both paths now redirect to the React panel —
+don't add a second UI on top of the API. The `posts`/`settings` routes in
+`src/worker.js` are leftovers the site doesn't use.
 
 The React panel has two modes: *Schnellzugriff* (Events, Neuigkeiten, Galerie,
 Vereinsinfo, Einstellungen) and *Vollzugriff* (all tabs). Tabs are declared in the `ADM_TABS`
@@ -275,12 +302,15 @@ so it stays in sync with the site design.
 `ImgField` (admin.jsx) is the shared editor for every image that is not a
 gallery photo — currently sponsor logos and person photos. It shows a preview,
 a file picker and a path input side by side: pick a file and it is stored as a
-data URL, or type `assets/…` to reference a file that ships with the site.
+data URL, or type `assets/…` to reference a file that ships with the site. In
+live mode with an R2 bucket bound (`uploads: true`), the downscaled image is
+uploaded via `POST /api/upload` and stored as `/uploads/<key>` instead
+(`uploadDataUrl`); SVGs and failed uploads stay data URLs.
 `readImageFile(file, max, cb)` does the reading and downscales to `max` pixels
 edge length via canvas (PNG stays PNG so logos keep transparency, SVG is passed
-through untouched) — uploads land in `localStorage`, which holds only a few MB.
-`saveData` therefore catches the quota error and tells the user instead of
-failing silently; when it hits, the change lives only until the page reloads.
+through untouched). Data URLs count against the per-key D1 limit (live) or the
+few MB of `localStorage` (local); `saveData` reports both failures instead of
+failing silently — the change then lives only until the page reloads.
 
 ### Benutzer
 
@@ -303,7 +333,7 @@ and phone toggles, the *Bestätigung* card (`autoMail`, `offerPdf`),
 Saving writes `SITE_CONFIG.tickets`. Which dates are bookable is per event in
 the **Events** tab (`tickets`, `price`, `seats`, `ticketNote`), where the editor
 also shows the live `ticketStatusText` for the date and `AdmReservations` lists
-the reservations stored in this browser.
+the reservations (all of them from D1 in live mode).
 
 *Vereinsinfo › Laufschrift* uses the same `PowerBtn` for the topbar strip:
 `topbarStripEnabled` hides it outright, `topbarStripOnlyWithEvent` ties it to
@@ -324,11 +354,11 @@ group rewrites the `group` field of the affected photos (deleted groups fall
 back to `Allgemein`). The names `Garde`, `Musikzug` and `Präsidium` also drive
 the photo strips on the group sub-pages — renaming them empties those strips.
 
-Saving goes through `saveData(key, data)`, which writes `nzadm_<KEY>` to
-`localStorage` **and** updates `window[KEY]`, so the public pages reflect
-changes immediately. `app.jsx` re-applies those overrides on every page load —
-a new admin-editable key has to be added to that list in `app.jsx` and to the
-reset list in `AdmSettings`, otherwise the change is lost on reload.
+Saving goes through `saveData(key, data)` (see *Global storage*), which also
+updates `window[KEY]`, so the open pages reflect changes immediately. A new
+admin-editable key has to be added to `CONTENT_KEYS` in **both** `app.jsx` and
+`src/worker.js` (the API rejects unknown keys) and to the reset list in
+`AdmSettings`, otherwise the change is lost on reload.
 
 ## CSS conventions
 

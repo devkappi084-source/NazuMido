@@ -1,16 +1,52 @@
-// Apply any admin overrides saved in localStorage before first render
-(function applyAdminOverrides() {
-  const keys = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','INTERNAL','SITE_CONFIG','ROLES','DEMO_USERS'];
-  keys.forEach(k => {
-    try {
-      const raw = localStorage.getItem('nzadm_' + k);
-      if (raw) window[k] = JSON.parse(raw);
-    } catch(e) {}
+// Admin-Inhalte über den Grundstand aus data.jsx legen — bevor gerendert wird.
+// Quelle ist die Datenbank (GET /api/content), damit Änderungen im Admin-Panel
+// für alle Besucher:innen gelten. Ist die API nicht erreichbar (Datei direkt
+// geöffnet, statischer Server ohne Pages Function), gelten wie früher die
+// Überschreibungen im localStorage dieses Browsers.
+const CONTENT_KEYS = ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','INTERNAL','SITE_CONFIG','ROLES','DEMO_USERS'];
+
+function applyContent(content) {
+  CONTENT_KEYS.forEach(k => {
+    if (content[k] !== undefined && content[k] !== null) window[k] = content[k];
   });
-  if (localStorage.getItem('nzadm_SPONSORS_TIERS')) {
+  if (content.SPONSORS_TIERS) {
     window.SPONSORS = window.SPONSORS_TIERS.flatMap(t => t.sponsors.map(s => s.name));
   }
-})();
+}
+
+function applyLocalOverrides() {
+  const content = {};
+  CONTENT_KEYS.forEach(k => {
+    try {
+      const raw = localStorage.getItem('nzadm_' + k);
+      if (raw) content[k] = JSON.parse(raw);
+    } catch(e) {}
+  });
+  applyContent(content);
+}
+
+// window.__nzContent sagt dem Admin-Panel, woher die Inhalte stammen.
+async function loadContent() {
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = setTimeout(() => ctrl && ctrl.abort(), 4000);
+  try {
+    if (location.protocol === 'file:') throw new Error('file');
+    const resp = await fetch('/api/content', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data || typeof data.content !== 'object') throw new Error('kein Inhalt');
+    applyContent(data.content);
+    window.__nzContent = { source: 'server', updatedAt: data.updatedAt, uploads: !!data.uploads };
+  } catch (e) {
+    applyLocalOverrides();
+    window.__nzContent = { source: 'local', uploads: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+window.NZ_CONTENT_KEYS = CONTENT_KEYS;
+window.nzApplyContent = applyContent;
 
 const { useState: useStateApp, useEffect: useEffectApp } = React;
 
@@ -147,4 +183,4 @@ function App() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+loadContent().finally(() => root.render(<App />));
