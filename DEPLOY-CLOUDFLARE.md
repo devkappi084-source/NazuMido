@@ -60,13 +60,15 @@ npm run db:remote                       # schema.sql einspielen
 ```
 
 Ohne Terminal: **Storage & Databases → D1 → Create** → Name `nazumido-db`,
-dann im Tab **Console** den Inhalt von `schema.sql` ausführen. Die Tabelle
-`reservations` legt die Function bei Bedarf auch selbst an.
+dann im Tab **Console** den Inhalt von `schema.sql` ausführen. Die Tabellen
+`reservations` und `content` (Inhalte aus dem Admin-Panel) legt die Function bei
+Bedarf auch selbst an.
 
 ## Schritt 2 — R2-Bucket (optional)
 
-Nur nötig, wenn Fotos über `POST /api/upload` hochgeladen werden sollen (die
-Website selbst nutzt das derzeit nicht):
+Empfohlen: Ist der Bucket eingebunden, landen im Admin-Panel hochgeladene
+Logos und Personenfotos als Datei in R2 statt eingebettet in der Datenbank
+(dort ist je Bereich bei rund 2 MB Schluss):
 
 ```bash
 npx wrangler r2 bucket create nazumido-uploads
@@ -85,9 +87,15 @@ npx wrangler pages secret put ADMIN_PASSWORD    # Passwort für /api/login
 Ohne Terminal: Pages-Projekt → **Settings → Variables and Secrets** → als
 *Secret* anlegen, danach neu deployen.
 
-`ADMIN_PASSWORD` ist die maßgebliche Quelle für das API-Admin-Passwort; ein
-nachträglich geändertes Secret wirkt sofort. Der Benutzername steht als
-`ADMIN_USERNAME` in der `wrangler.toml`.
+`ADMIN_PASSWORD` ist das Passwort für das Admin-Panel (`/#admin`); ein
+nachträglich geändertes Secret wirkt ab der nächsten Anmeldung. Der
+Benutzername steht als `ADMIN_USERNAME` in der `wrangler.toml`.
+
+**Beide Secrets sind Pflicht, damit Änderungen im Admin-Panel für alle
+Besucher:innen gelten.** Fehlt eines, lehnt `/api/login` ab (503) und das Panel
+arbeitet nur lokal im Browser (roter Hinweis „Lokaler Modus“, Kopfzeile
+„Lokal“ statt „Live“). Gespeichert wird in der D1-Tabelle `content`; die
+Website lädt sie beim Start über `GET /api/content`.
 
 ## Schritt 3b — Bestätigungsmails für Ticket-Reservierungen (optional)
 

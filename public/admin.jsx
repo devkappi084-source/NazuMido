@@ -2,15 +2,71 @@
 const { useState: useAdmSt, useEffect: useAdmFx } = React;
 
 // ─── Persistenz-Helpers ───────────────────────────────────────────────────────
+// Zwei Betriebsarten:
+//   • Live (Standard): Anmeldung über POST /api/login, jede Änderung geht per
+//     PUT /api/admin/content in die Datenbank und gilt sofort für alle
+//     Besucher:innen. Das Token liegt in sessionStorage (TOKEN_KEY).
+//   • Lokal (Rückfall, wenn die API fehlt oder nicht eingerichtet ist): wie
+//     früher nur im localStorage dieses Browsers.
 const PFX = 'nzadm_';
-const SESS_KEY = 'nzadm_sess';
-const PW_KEY   = 'nzadm_pw';
+const SESS_KEY  = 'nzadm_sess';
+const TOKEN_KEY = 'nzadm_token';
+const PW_KEY    = 'nzadm_pw';
 const DEFAULT_PW = 'admin2026';
+
+function admToken() {
+  try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+}
+function isLive() { return !!admToken(); }
+function uploadsAvailable() { return isLive() && !!(window.__nzContent && window.__nzContent.uploads); }
+
+// Fetch mit Admin-Token. Abgelaufenes Token → Abmelden, Panel zeigt den Login.
+async function admApi(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + admToken() });
+  const resp = await fetch(path, Object.assign({}, opts, { headers }));
+  const data = await resp.json().catch(() => ({}));
+  if (resp.status === 401) {
+    try { sessionStorage.removeItem(TOKEN_KEY); sessionStorage.removeItem(SESS_KEY); } catch (e) {}
+    window.dispatchEvent(new Event('nzadm-logout'));
+  }
+  if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+  return data;
+}
+
+// Speicherstatus für die Anzeige im Kopf des Panels
+const admSync = { pending: 0, error: '', at: null };
+function emitSync() { window.dispatchEvent(new Event('nzadm-sync')); }
+
+// Schreibvorgänge nacheinander abschicken, damit ein älterer Stand nie einen
+// neueren überholt.
+let admQueue = Promise.resolve();
+function pushContent(payload) {
+  admSync.pending++; admSync.error = ''; emitSync();
+  const job = admQueue.then(() => admApi('/api/admin/content', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }));
+  admQueue = job.catch(() => {});
+  return job.then(
+    data => { admSync.pending--; admSync.at = new Date(); emitSync(); return data; },
+    err => {
+      admSync.pending--; admSync.error = err.message || 'Speichern fehlgeschlagen'; emitSync();
+      alert('Änderung konnte nicht veröffentlicht werden:\n\n' + admSync.error
+        + '\n\nSie ist nur in diesem Fenster sichtbar, bis die Seite neu geladen wird.');
+      throw err;
+    }
+  );
+}
 
 function saveData(key, data) {
   window[key] = data;
   if (key === 'SPONSORS_TIERS') {
     window.SPONSORS = data.flatMap(t => t.sponsors.map(s => s.name));
+  }
+  if (isLive()) {
+    pushContent({ [key]: data }).catch(() => {});
+    return true;
   }
   try {
     localStorage.setItem(PFX + key, JSON.stringify(data));
@@ -28,16 +84,21 @@ function saveData(key, data) {
   }
 }
 
+// window[key] ist der wirksame Stand (data.jsx + Datenbank bzw. localStorage,
+// angewandt in app.jsx) — eine Kopie davon wird bearbeitet.
 function loadData(key) {
-  try {
-    const r = localStorage.getItem(PFX + key);
-    if (r) return JSON.parse(r);
-  } catch(e) {}
   try {
     return JSON.parse(JSON.stringify(window[key]));
   } catch(e) {
     return window[key];
   }
+}
+
+// Im localStorage liegengebliebene Änderungen aus dem lokalen Modus
+function localOverrideKeys() {
+  return (window.NZ_CONTENT_KEYS || []).filter(k => {
+    try { return localStorage.getItem(PFX + k) !== null; } catch (e) { return false; }
+  });
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
@@ -74,16 +135,34 @@ function readImageFile(file, max, cb) {
   reader.readAsDataURL(file);
 }
 
+// Im Live-Modus mit R2-Bucket wandert das Bild nach /uploads/… statt als
+// Data-URL in die Datenbank (dort ist je Bereich bei ~2 MB Schluss).
+async function uploadDataUrl(dataUrl, name) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif' }[blob.type] || '';
+  const fd = new FormData();
+  fd.append('photo', blob, String(name || 'bild').replace(/\.[^.]+$/, '') + ext);
+  const data = await admApi('/api/upload', { method: 'POST', body: fd });
+  return data.url;
+}
+
 // Bildfeld: Vorschau, Datei-Upload und Pfad-Eingabe in einem.
 // `value` ist ein Pfad (assets/…) oder eine Data-URL, `null` = kein Bild.
 function ImgField({ label, hint, value, onChange, max = 640, shape = 'logo' }) {
   const [err, setErr] = useAdmSt('');
+  const [busy, setBusy] = useAdmSt(false);
   const inputId = 'imgf-' + (label || '').replace(/\W+/g, '') + '-' + React.useId();
   const pick = e => {
     const file = e.target.files && e.target.files[0];
     setErr('');
     readImageFile(file, max, (src, error) => {
-      if (error) setErr(error); else onChange(src);
+      if (error) { setErr(error); return; }
+      if (!uploadsAvailable() || file.type === 'image/svg+xml') { onChange(src); return; }
+      setBusy(true);
+      uploadDataUrl(src, file.name)
+        .then(url => onChange(url))
+        .catch(e => { setErr('Upload fehlgeschlagen (' + e.message + ') — Bild wird direkt gespeichert.'); onChange(src); })
+        .finally(() => setBusy(false));
     });
     e.target.value = '';
   };
@@ -104,8 +183,9 @@ function ImgField({ label, hint, value, onChange, max = 640, shape = 'logo' }) {
             {value && <Btn v="ghost" className="sm" onClick={() => { setErr(''); onChange(null); }}>Entfernen</Btn>}
           </div>
           {value && value.slice(0, 5) === 'data:' && (
-            <p className="adm-hint">Hochgeladen · {Math.round(value.length / 1024)} KB im Browserspeicher</p>
+            <p className="adm-hint">Eingebettet · {Math.round(value.length / 1024)} KB {isLive() ? 'in der Datenbank' : 'im Browserspeicher'}</p>
           )}
+          {busy && <p className="adm-hint">Lädt hoch…</p>}
           {hint && !err && <p className="adm-hint">{hint}</p>}
           {err && <p className="adm-err" style={{ margin: '6px 0 0' }}>{err}</p>}
         </div>
@@ -129,10 +209,10 @@ function galleryCfg() {
 }
 
 // ─── UI-Bausteine (Design-System der Website) ─────────────────────────────────
-function Btn({ children, onClick, v = 'primary', className = '', type = 'button' }) {
+function Btn({ children, onClick, v = 'primary', className = '', type = 'button', disabled = false }) {
   const variant = v === 'primary' ? '' : ' ' + v;
   return (
-    <button type={type} onClick={onClick} className={'adm-btn' + variant + (className ? ' ' + className : '')}>
+    <button type={type} onClick={onClick} disabled={disabled} className={'adm-btn' + variant + (className ? ' ' + className : '')}>
       {children}
     </button>
   );
@@ -245,15 +325,69 @@ function TextListEditor({ items, onChange, addLabel, placeholder }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
+// Zuerst gegen die API (Live-Modus). Nur wenn es die nicht gibt oder ihr die
+// Secrets fehlen, gilt das lokale Passwort und das Panel arbeitet lokal.
+// Nach dem Login holt das Panel den vollen Datenstand inkl. der Passwörter der
+// Mitglieder-Konten, die GET /api/content nicht ausliefert.
+async function loadAdminContent() {
+  const data = await admApi('/api/admin/content');
+  if (window.nzApplyContent) window.nzApplyContent(data.content || {});
+  window.__nzContent = { source: 'server', updatedAt: data.updatedAt, uploads: !!data.uploads };
+  window.__nzAdminLoaded = true;
+}
+
 function AdminLogin({ onAuth }) {
   const [pw, setPw] = useAdmSt('');
   const [err, setErr] = useAdmSt('');
-  const submit = e => {
+  const [busy, setBusy] = useAdmSt(false);
+
+  const localLogin = reason => {
+    if (pw !== (localStorage.getItem(PW_KEY) || DEFAULT_PW)) {
+      setErr(reason ? 'Server-Anmeldung nicht möglich: ' + reason : 'Falsches Passwort.');
+      return;
+    }
+    sessionStorage.setItem(SESS_KEY, '1');
+    sessionStorage.removeItem(TOKEN_KEY);
+    window.__nzLocalReason = reason || 'Die Server-API ist nicht erreichbar.';
+    onAuth();
+  };
+
+  const submit = async e => {
     e.preventDefault();
-    if (pw === (localStorage.getItem(PW_KEY) || DEFAULT_PW)) {
-      sessionStorage.setItem(SESS_KEY, '1');
-      onAuth();
-    } else setErr('Falsches Passwort.');
+    if (busy) return;
+    setBusy(true); setErr('');
+    let resp = null, data = {};
+    try {
+      if (location.protocol === 'file:') throw new Error('file');
+      resp = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      data = await resp.json().catch(() => ({}));
+    } catch (e2) { resp = null; }
+
+    try {
+      if (resp && resp.ok && data.token) {
+        sessionStorage.setItem(TOKEN_KEY, data.token);
+        sessionStorage.setItem(SESS_KEY, '1');
+        await loadAdminContent();
+        onAuth();
+      } else if (resp && resp.status === 401) {
+        setErr('Falsches Passwort.');
+      } else if (resp && resp.status === 503) {
+        localLogin(data.error || 'Server nicht eingerichtet.');
+      } else if (resp && resp.status !== 404 && data.error) {
+        setErr(data.error);
+      } else {
+        localLogin('');
+      }
+    } catch (e3) {
+      sessionStorage.removeItem(TOKEN_KEY);
+      setErr('Inhalte konnten nicht geladen werden: ' + e3.message);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="adm-login">
@@ -267,9 +401,9 @@ function AdminLogin({ onAuth }) {
               onChange={e => { setPw(e.target.value); setErr(''); }} />
           </Fld>
           {err && <p className="adm-err">{err}</p>}
-          <Btn v="dark" type="submit" className="block">Anmelden →</Btn>
+          <Btn v="dark" type="submit" className="block" disabled={busy}>{busy ? 'Anmelden…' : 'Anmelden →'}</Btn>
         </form>
-        <p className="hint">Standard: <code>{DEFAULT_PW}</code></p>
+        <p className="hint">Passwort = Secret <code>ADMIN_PASSWORD</code> des Pages-Projekts</p>
       </div>
     </div>
   );
@@ -412,21 +546,47 @@ function AdmEvents({ onSave }) {
 }
 
 // ─── Eingegangene Reservierungen ──────────────────────────────────────────────
-// Ohne Backend liegen Reservierungen im localStorage des Browsers, in dem sie
-// abgeschickt wurden — hier sichtbar sind also die eigenen bzw. die an einem
-// gemeinsam genutzten Gerät angelegten.
+// Live: alle Reservierungen aus D1 (GET /api/admin/reservations). Im lokalen
+// Modus nur die aus dem localStorage dieses Browsers — also die eigenen bzw. die
+// an einem gemeinsam genutzten Gerät angelegten.
+function fromServerReservation(r) {
+  return {
+    id: 'srv-' + r.id, srvId: r.id, code: r.code, eventId: r.event_id, eventTitle: r.event_title,
+    eventDate: r.event_date, eventIso: r.event_iso, eventTime: r.event_time, eventWhere: r.event_where,
+    name: r.name, email: r.email, phone: r.phone, count: r.seats, note: r.note,
+    at: r.created_at ? String(r.created_at).replace(' ', 'T') + 'Z' : '',
+  };
+}
+
 function AdmReservations({ onSave }) {
-  const [list, setList] = useAdmSt(() => (window.loadReservations ? window.loadReservations() : []));
+  const live = isLive();
+  const [list, setList] = useAdmSt(() => (live ? [] : (window.loadReservations ? window.loadReservations() : [])));
+  const [loadErr, setLoadErr] = useAdmSt('');
   const [shown, setShown] = useAdmSt(false);
   const [pick, setPick]   = useAdmSt('alle');   // Filter: 'alle' oder eventId/-titel
+
+  useAdmFx(() => {
+    if (!live) return;
+    admApi('/api/admin/reservations')
+      .then(rows => setList((rows || []).map(fromServerReservation)))
+      .catch(e => setLoadErr(e.message));
+  }, [live]);
 
   const persist = (next, msg) => {
     setList(next);
     if (window.saveReservations) window.saveReservations(next);
     if (msg) onSave(msg);
   };
-  const del = id => {
+  const del = async id => {
     if (!confirm('Reservierung löschen?')) return;
+    if (live) {
+      const row = list.find(r => r.id === id);
+      try { await admApi('/api/admin/reservations/' + row.srvId, { method: 'DELETE' }); }
+      catch (e) { alert('Löschen fehlgeschlagen: ' + e.message); return; }
+      setList(list.filter(r => r.id !== id));
+      onSave('Reservierung gelöscht');
+      return;
+    }
     persist(list.filter(r => r.id !== id), 'Reservierung gelöscht');
   };
   const clear = () => {
@@ -547,13 +707,21 @@ function AdmReservations({ onSave }) {
       <p className="adm-card-desc">
         {list.length
           ? `${filtered.length} Anfrage${filtered.length === 1 ? '' : 'n'} · ${seats} Plätze${pick === 'alle' ? ' insgesamt' : ' für diesen Termin'}.`
-          : 'Noch keine Reservierungen in diesem Browser.'}
+          : live ? 'Noch keine Reservierungen eingegangen.' : 'Noch keine Reservierungen in diesem Browser.'}
       </p>
+      {loadErr && <p className="adm-err">Reservierungen konnten nicht geladen werden: {loadErr}</p>}
+      {live ? (
+      <div className="adm-note">
+        Alle Online-Reservierungen aus der Datenbank — unabhängig davon, an welchem
+        Gerät sie abgeschickt wurden.
+      </div>
+      ) : (
       <div className="adm-note">
         Reservierungen werden im Browser der Besucher:in gespeichert und zusätzlich
         per E-Mail an <code>{(window.ticketConfig ? window.ticketConfig().notifyEmail : '') || (window.SITE_CONFIG || {}).email}</code>
         {' '}geschickt. Verlässlich ist der E-Mail-Eingang — diese Liste zeigt nur, was an diesem Gerät angelegt wurde.
       </div>
+      )}
       {!!picks.length && (
         <Fld label="Termin">
           <Sel value={pick} onChange={e => setPick(e.target.value)}>
@@ -568,7 +736,7 @@ function AdmReservations({ onSave }) {
         </Btn>
         {!!filtered.length && <Btn className="sm" onClick={printList}>Liste drucken</Btn>}
         {!!filtered.length && <Btn v="ghost" className="sm" onClick={exportCsv}>Als CSV exportieren</Btn>}
-        {!!list.length && <Btn v="danger" className="sm right" onClick={clear}>Alle löschen</Btn>}
+        {!live && !!list.length && <Btn v="danger" className="sm right" onClick={clear}>Alle löschen</Btn>}
       </div>
       {shown && buckets.map(b => (
         <div key={b.key} style={{ marginTop: 16 }}>
@@ -1903,12 +2071,44 @@ function AdmSettings({ onSave }) {
     onSave('Passwort geändert');
   };
 
-  const resetAll = () => {
-    if (!confirm('Wirklich alle Änderungen zurücksetzen? Die Seite wird danach neu geladen.')) return;
+  const live = isLive();
+  const [localKeys, setLocalKeys] = useAdmSt(() => localOverrideKeys());
+  const dropLocal = () => {
     ['NEWS','EVENTS','GROUPS','PEOPLE','PHOTOS','PHOTO_GROUPS','GARDE','MUSIKZUG','VORSITZ','SPONSORS_TIERS','SPONSORS','INTERNAL','SITE_CONFIG','ROLES','DEMO_USERS']
       .forEach(k => localStorage.removeItem(PFX + k));
+  };
+
+  const resetAll = async () => {
+    const what = live
+      ? 'Wirklich ALLE Änderungen für die gesamte Website zurücksetzen? Alle Besucher:innen sehen danach wieder den Originalstand. Die Seite wird neu geladen.'
+      : 'Wirklich alle Änderungen zurücksetzen? Die Seite wird danach neu geladen.';
+    if (!confirm(what)) return;
+    if (live) {
+      try { await admApi('/api/admin/content', { method: 'DELETE' }); }
+      catch (e) { alert('Zurücksetzen fehlgeschlagen: ' + e.message); return; }
+      window.__nzAdminLoaded = false;
+    }
+    dropLocal();
     onSave('Zurückgesetzt — lädt neu…');
     setTimeout(() => window.location.reload(), 1200);
+  };
+
+  // Aus dem früheren lokalen Modus liegengebliebene Änderungen veröffentlichen
+  const publishLocal = async () => {
+    if (!confirm(`${localKeys.length} lokal gespeicherte Bereiche veröffentlichen? Sie ersetzen den aktuellen Live-Stand dieser Bereiche.`)) return;
+    const payload = {};
+    localKeys.forEach(k => { try { payload[k] = JSON.parse(localStorage.getItem(PFX + k)); } catch (e) {} });
+    try { await pushContent(payload); } catch (e) { return; }
+    if (window.nzApplyContent) window.nzApplyContent(payload);
+    dropLocal();
+    setLocalKeys([]);
+    onSave('Lokale Änderungen veröffentlicht');
+  };
+  const discardLocal = () => {
+    if (!confirm('Lokal gespeicherte Änderungen in diesem Browser verwerfen?')) return;
+    dropLocal();
+    setLocalKeys([]);
+    onSave('Lokale Änderungen verworfen');
   };
 
   return (
@@ -1923,10 +2123,22 @@ function AdmSettings({ onSave }) {
 
       {section === 'tickets' && <AdmTicketSettings onSave={onSave} />}
 
-      {section === 'zugang' && (
+      {section === 'zugang' && live && (
+      <div className="adm-card">
+        <div className="adm-card-title">Admin-Passwort</div>
+        <p className="adm-card-desc">
+          Das Passwort ist das Secret <code>ADMIN_PASSWORD</code> des Pages-Projekts
+          und wird dort geändert — im Cloudflare-Dashboard unter <em>Settings › Variables
+          and Secrets</em> oder mit <code>npx wrangler pages secret put ADMIN_PASSWORD</code>.
+          Das neue Passwort gilt ab der nächsten Anmeldung.
+        </p>
+      </div>
+      )}
+
+      {section === 'zugang' && !live && (
       <div className="adm-card">
         <div className="adm-card-title">Admin-Passwort ändern</div>
-        <p className="adm-card-desc">Gilt für die Anmeldung an diesem Panel (lokal im Browser gespeichert).</p>
+        <p className="adm-card-desc">Gilt nur für den lokalen Modus (im Browser gespeichert). Im Live-Modus zählt das Secret <code>ADMIN_PASSWORD</code>.</p>
         <form onSubmit={changePass}>
           <div className="adm-grid-2">
             <Fld label="Neues Passwort"><Inp type="password" value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} /></Fld>
@@ -1938,6 +2150,21 @@ function AdmSettings({ onSave }) {
       </div>
       )}
 
+      {section === 'daten' && live && localKeys.length > 0 && (
+      <div className="adm-card accent-gold">
+        <div className="adm-card-title">Lokale Änderungen gefunden</div>
+        <p className="adm-card-desc">
+          In diesem Browser liegen noch Änderungen aus dem lokalen Modus, die
+          Besucher:innen nicht sehen: {localKeys.join(', ')}. Veröffentlichen
+          überträgt sie in die Datenbank.
+        </p>
+        <div className="adm-actions">
+          <Btn onClick={publishLocal}>Veröffentlichen</Btn>
+          <Btn v="ghost" onClick={discardLocal}>Verwerfen</Btn>
+        </div>
+      </div>
+      )}
+
       {section === 'daten' && (
       <div className="adm-card accent-red">
         <div className="adm-card-title">Alle Änderungen zurücksetzen</div>
@@ -1946,6 +2173,7 @@ function AdmSettings({ onSave }) {
           Datenstand der Website zurück — inklusive Galerie, Galerie-Einstellungen,
           hochgeladener Logos und Fotos sowie Benutzerkonten und Rollen.
           Selbstregistrierungen bleiben erhalten.
+          {live ? ' Das gilt für alle Besucher:innen.' : ''}
         </p>
         <Btn v="danger" onClick={resetAll}>Auf Standardwerte zurücksetzen</Btn>
       </div>
@@ -1970,15 +2198,57 @@ const ADM_TABS = [
   { id: 'settings', icon: '⚙️', label: 'Einstellungen', title: 'Einstellungen', desc: 'Galerie, Ticket-Reservierung, Zugang und Wiederherstellung des Original-Datenstands.', simple: true },
 ];
 
+// Kopfzeile: wohin wird gespeichert, und hat es geklappt?
+function SyncBadge() {
+  const [, tick] = useAdmSt(0);
+  useAdmFx(() => {
+    const on = () => tick(n => n + 1);
+    window.addEventListener('nzadm-sync', on);
+    return () => window.removeEventListener('nzadm-sync', on);
+  }, []);
+  if (!isLive()) return <span className="adm-sync local" title={window.__nzLocalReason || ''}>Lokal</span>;
+  if (admSync.pending) return <span className="adm-sync busy">Speichert…</span>;
+  if (admSync.error) return <span className="adm-sync err" title={admSync.error}>Fehler</span>;
+  return <span className="adm-sync live" title="Änderungen gelten sofort für alle Besucher:innen">Live</span>;
+}
+
 function AdminPage({ navigate }) {
   const [authed, setAuthed] = useAdmSt(() => sessionStorage.getItem(SESS_KEY) === '1');
   const [mode,   setMode]   = useAdmSt('simple');
   const [tab,    setTab]    = useAdmSt('events');
   const [toast,  setToast]  = useAdmSt(null);
+  // Nach einem Neuladen fehlen die Passwörter der Mitglieder-Konten (die
+  // öffentliche API liefert sie nicht) — also den vollen Stand nachladen.
+  const [ready,  setReady]  = useAdmSt(() => !isLive() || !!window.__nzAdminLoaded);
+  const [loadErr, setLoadErr] = useAdmSt('');
 
-  if (!authed) return <AdminLogin onAuth={() => setAuthed(true)} />;
+  useAdmFx(() => {
+    const out = () => setAuthed(false);
+    window.addEventListener('nzadm-logout', out);
+    return () => window.removeEventListener('nzadm-logout', out);
+  }, []);
 
-  const logout = () => { sessionStorage.removeItem(SESS_KEY); setAuthed(false); };
+  useAdmFx(() => {
+    if (!authed || ready) return;
+    loadAdminContent().then(() => setReady(true), e => setLoadErr(e.message));
+  }, [authed, ready]);
+
+  if (!authed) return <AdminLogin onAuth={() => { setReady(true); setAuthed(true); }} />;
+  if (!ready) {
+    return (
+      <div className="adm-login"><div className="adm-login-card">
+        <h2>Verwaltung</h2>
+        <p className={loadErr ? 'adm-err' : 'sub'}>{loadErr ? 'Inhalte konnten nicht geladen werden: ' + loadErr : 'Lädt Inhalte…'}</p>
+      </div></div>
+    );
+  }
+
+  const logout = () => {
+    sessionStorage.removeItem(SESS_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    window.__nzAdminLoaded = false;
+    setAuthed(false);
+  };
   const tabs = mode === 'simple' ? ADM_TABS.filter(t => t.simple) : ADM_TABS;
   const active = tabs.find(t => t.id === tab) || tabs[0];
 
@@ -1998,6 +2268,7 @@ function AdminPage({ navigate }) {
             <span>Verwaltung</span>
           </a>
           <div className="adm-bar-spacer" />
+          <SyncBadge />
           <div className="adm-modes">
             {[['simple','Schnellzugriff'],['advanced','Vollzugriff']].map(([id, label]) => (
               <button key={id} className={'adm-mode' + (mode === id ? ' on' : '')} onClick={() => switchMode(id)}>
@@ -2023,6 +2294,14 @@ function AdminPage({ navigate }) {
           <h1>{active.title}</h1>
           <p className="lead">{active.desc}</p>
         </div>
+
+        {!isLive() && (
+          <div className="adm-note adm-mode-note">
+            <strong>Lokaler Modus:</strong> Änderungen werden nur in diesem Browser
+            gespeichert und sind für Besucher:innen nicht sichtbar.
+            {window.__nzLocalReason ? ' ' + window.__nzLocalReason : ''}
+          </div>
+        )}
 
         <div className="adm-layout">
           <nav className="adm-nav">

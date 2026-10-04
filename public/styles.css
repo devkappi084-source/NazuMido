@@ -2242,6 +2242,34 @@ a.sponsor-card:hover .name { color: var(--red); }
 }
 .adm-barlink:hover { color: var(--cream); }
 @media (max-width: 720px) { .adm-barlink.hide-sm { display: none; } }
+/* Speicherziel im Kopf: Live (Datenbank) oder nur lokal */
+.adm-sync {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 10px 4px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(247,241,230,0.2);
+  color: var(--cream);
+  position: relative;
+  white-space: nowrap;
+}
+.adm-sync::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.adm-sync.live::before { background: var(--green); box-shadow: 0 0 0 1px var(--cream); }
+.adm-sync.busy::before { background: var(--gold); }
+.adm-sync.err { border-color: var(--red); }
+.adm-sync.err::before, .adm-sync.local::before { background: var(--red); }
 .adm-stripe { display: flex; height: 4px; }
 .adm-stripe span { flex: 1; }
 .adm-stripe .r { background: var(--red); }
@@ -2699,6 +2727,7 @@ a.sponsor-card:hover .name { color: var(--red); }
   color: var(--ink-2);
   margin-bottom: 20px;
 }
+.adm-mode-note { border-left: 3px solid var(--red); }
 .adm-note code {
   font-family: var(--mono);
   font-size: 12.5px;

@@ -89,6 +89,74 @@ try {
   });
   check('POST /api/login erneut -> PBKDF2-Verify ok', r.status === 200);
 
+  // --- Login nur mit Passwort (so fragt das Admin-Panel) -------------------
+  r = await mf.dispatchFetch(`${BASE}/api/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'nazumido' }),
+  });
+  check('POST /api/login ohne username -> ADMIN_USERNAME', r.status === 200);
+
+  // --- Website-Inhalte (global, Admin-Panel) ------------------------------
+  r = await mf.dispatchFetch(`${BASE}/api/content`);
+  d = await j(r);
+  check('GET /api/content leer -> {}', r.status === 200 && Object.keys(d.content).length === 0 && d.uploads === true);
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/content`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ NEWS: [] }),
+  });
+  check('PUT /api/admin/content ohne Token -> 401', r.status === 401);
+
+  const users = [{ email: 'Neu@Nazumido.at', password: 'geheim', role: 'Aktiv', name: 'Neu' }];
+  r = await mf.dispatchFetch(`${BASE}/api/admin/content`, {
+    method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ SITE_CONFIG: { season: 'Test-Saison' }, DEMO_USERS: users }),
+  });
+  d = await j(r);
+  check('PUT /api/admin/content -> gespeichert', r.status === 200 && d.saved.length === 2, `(status=${r.status})`);
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/content`, {
+    method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ HACK: 1 }),
+  });
+  check('PUT /api/admin/content unbekannter Bereich -> 400', r.status === 400);
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/content`, {
+    method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ PHOTOS: ['x'.repeat(2_000_000)] }),
+  });
+  check('PUT /api/admin/content zu groß -> 413', r.status === 413);
+
+  r = await mf.dispatchFetch(`${BASE}/api/content`);
+  d = await j(r);
+  check('GET /api/content -> Änderung für alle sichtbar', d.content.SITE_CONFIG && d.content.SITE_CONFIG.season === 'Test-Saison');
+  check('  ohne Passwörter der Mitglieder-Konten',
+    d.content.DEMO_USERS && d.content.DEMO_USERS[0].email === 'Neu@Nazumido.at' && !('password' in d.content.DEMO_USERS[0]));
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/content`, { headers: auth });
+  d = await j(r);
+  check('GET /api/admin/content -> mit Passwörtern', d.content.DEMO_USERS && d.content.DEMO_USERS[0].password === 'geheim');
+
+  r = await mf.dispatchFetch(`${BASE}/api/member-login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'neu@nazumido.at', password: 'geheim' }),
+  });
+  d = await j(r);
+  check('POST /api/member-login korrekt -> Konto ohne Passwort',
+    r.status === 200 && d.user.role === 'Aktiv' && !('password' in d.user));
+
+  r = await mf.dispatchFetch(`${BASE}/api/member-login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'neu@nazumido.at', password: 'falsch' }),
+  });
+  check('POST /api/member-login falsch -> 401', r.status === 401);
+
+  r = await mf.dispatchFetch(`${BASE}/api/admin/content`, { method: 'DELETE', headers: auth });
+  check('DELETE /api/admin/content -> 200', r.status === 200);
+  r = await mf.dispatchFetch(`${BASE}/api/content`);
+  d = await j(r);
+  check('  danach wieder Grundstand', Object.keys(d.content).length === 0);
+
   // --- Admin-Liste mit Token ---------------------------------------------
   r = await mf.dispatchFetch(`${BASE}/api/admin/posts`, { headers: auth });
   d = await j(r);
@@ -218,6 +286,12 @@ try {
   d = await j(r);
   check('GET /api/admin/reservations mit Token -> Liste', r.status === 200 && d.some((x) => x.code === 'NZ-TEST1'), `(len=${d.length})`);
 
+  const resRow = d.find((x) => x.code === 'NZ-TEST1');
+  r = await mf.dispatchFetch(`${BASE}/api/admin/reservations/${resRow.id}`, { method: 'DELETE', headers: auth });
+  check('DELETE /api/admin/reservations/:id -> 200', r.status === 200);
+  r = await mf.dispatchFetch(`${BASE}/api/admin/reservations/${resRow.id}`, { method: 'DELETE', headers: auth });
+  check('  erneut -> 404', r.status === 404);
+
   // --- Bestätigungsmail (Anbieter-API wird abgefangen) --------------------
   // Zweite Instanz mit Mailanbieter; der Aufruf an api.resend.com wird
   // abgefangen, damit der Test ohne Netz und ohne echten Schlüssel läuft.
@@ -247,6 +321,13 @@ try {
     serviceBindings: { ASSETS: () => new Response('asset-fallback', { status: 200 }) },
   });
   try {
+    r = await mfMail.dispatchFetch(`${BASE}/api/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'nazumido' }),
+    });
+    d = await j(r);
+    check('POST /api/login ohne ADMIN_PASSWORD -> 503', r.status === 503 && d.code === 'not-configured', `(status=${r.status})`);
+
     r = await mfMail.dispatchFetch(`${BASE}/api/reservations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...reservation, code: 'NZ-MAIL1' }),

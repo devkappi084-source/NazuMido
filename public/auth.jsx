@@ -37,6 +37,21 @@ function useAuth() {
         return { ok: true };
       }
     } catch (e) {}
+    // Im Admin gepflegte Konten kommen ohne Passwort aus der Datenbank
+    // (GET /api/content) — geprüft wird dann serverseitig.
+    if (window.__nzContent && window.__nzContent.source === 'server') {
+      return fetch('/api/member-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: mail, password }),
+      })
+        .then(resp => resp.json().then(data => ({ resp, data }), () => ({ resp, data: {} })))
+        .then(({ resp, data }) => {
+          if (resp.ok && data.user) { setUser(data.user); return { ok: true }; }
+          return { ok: false, error: data.error || 'E-Mail oder Passwort nicht korrekt.' };
+        })
+        .catch(() => ({ ok: false, error: 'Anmeldung derzeit nicht möglich — bitte später erneut versuchen.' }));
+    }
     return { ok: false, error: 'E-Mail oder Passwort nicht korrekt.' };
   };
 
@@ -86,19 +101,18 @@ function LoginPage({ auth, navigate }) {
   const submit = (e) => {
     e.preventDefault();
     setErr('');
-    let res;
-    if (mode === 'login') {
-      res = auth.login(form.email, form.password);
-    } else {
-      res = auth.register(form);
-    }
-    if (!res.ok) setErr(res.error);
-    else navigate('mitglieder');
+    // login kann ein Promise liefern (Prüfung über /api/member-login)
+    const res = mode === 'login' ? auth.login(form.email, form.password) : auth.register(form);
+    Promise.resolve(res).then(r => {
+      if (!r.ok) setErr(r.error);
+      else navigate('mitglieder');
+    });
   };
 
+  // Konten aus der Datenbank kommen ohne Passwort — dann nur die E-Mail eintragen
   const fillDemo = (u) => {
     setMode('login');
-    setForm({ ...form, email: u.email, password: u.password });
+    setForm({ ...form, email: u.email, password: u.password || '' });
   };
 
   return (
